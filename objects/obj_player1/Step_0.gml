@@ -18,10 +18,28 @@ if (global.current_state == "record1") {
 	}
 	
 	y_vel -= .3 * _dt;                           // gravity
-	x_vel *= .8;              // friction
+	x_vel *= .9;              // friction
 	y_vel = clamp(y_vel, -30, 30);              // speed limit
 	
 	// Update position
 	x += x_vel * _dt;
 	y -= y_vel * _dt;
+	
+	if (x <= 0) {
+		x_vel += 50;
+	}
+	
+	if (y <= 0) {
+		y_vel *= -1;
+	}
+	
+	if (x >= room_width) {
+		x_vel -= 50;
+	}
+	
+	if (y >= room_height) {
+		y_vel *= -1;
+	}
 }
+
+

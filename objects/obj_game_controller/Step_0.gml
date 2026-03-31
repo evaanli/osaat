@@ -1,13 +1,13 @@
 global.dt = delta_time / game_get_speed(gamespeed_microseconds);
 
 if (global.current_state == "record1t") {
-	// Goes to the recording room
-    room_goto(recording);
 	
-	// Sets the waiting time if it isn't set
-    if (not alarm[0] > 0) {
-        alarm[0] = 180;
-    }
+	// Create a ready button if there isn't one already
+	if (!instance_exists(obj_ready_button)) {
+		instance_create_layer(room_width / 2, room_height / 2, recording, obj_ready_button);
+	}
+	
+	// Waits for the button to be pressed
 	
 	// Resets the time
     global.time = 0;
@@ -22,14 +22,17 @@ if (global.current_state == "record1t") {
 	if (global.time >= global.time_limit) {
 		// If so, set the current state to the next transition (player2)
         global.current_state = "record2t";
+		reset_players(); // Resets the players so that the other player doesn't see during transition
 		
         // show_debug_message(global.record1);
     }
 } else if (global.current_state == "record2t") {
-	// Sets the waiting time if it isn't set
-    if (alarm[1] == -1) {
-        alarm[1] = 180;
-    }
+	// Create a ready button if there isn't one already
+	if (!instance_exists(obj_ready_button)) {
+		instance_create_layer(room_width / 2, room_height / 2, recording, obj_ready_button);
+	}
+	
+	// Waits for the button to be pressed
 	
 	// Resets the time
     global.time = 0;
@@ -44,16 +47,19 @@ if (global.current_state == "record1t") {
 	if (global.time >= global.time_limit) {
 		// If so, set the current state to the next transition (replay)
         global.current_state = "replayt";
+		reset_players(); // Resets the players so that the other player doesn't see during transition
         
 		//show_debug_message(global.record2);
     }
 } else if (global.current_state == "replayt") {
-	// Sets the transition time if not already set
-    if (alarm[2] == -1) {
-        alarm[2] = 180;
-    }
+	// Create a ready button if there isn't one already
+	if (!instance_exists(obj_ready_button)) {
+		instance_create_layer(room_width / 2, room_height / 2, recording, obj_ready_button);
+	}
 	
-	// Resets the time variable
+	// Waits for the button to be pressed
+	
+	// Resets the time
     global.time = 0;
 } else if (global.current_state == "replay") {
     // Add time with deltatime
@@ -149,21 +155,24 @@ if (global.current_state == "record1t") {
     if (global.time >= global.time_limit)
     {
 		// Update the gamestate variable
-        global.gamestate[0] = array_last(global.record1)[0];
-		global.gamestate[1] = array_last(global.record1)[1];
-		global.gamestate[2] = array_last(global.record1)[2];
-		global.gamestate[3] = array_last(global.record1)[3];
+        global.gamestate[0] = array_last(global.record1)[0]; // Last X position
+		global.gamestate[1] = array_last(global.record1)[1]; // Last Y position
+		global.gamestate[2] = array_last(global.record1)[2]; // Last x velocity
+		global.gamestate[3] = array_last(global.record1)[3]; // Last y velocity
 
-        global.gamestate[5] = array_last(global.record2)[0];
-		global.gamestate[6] = array_last(global.record2)[1];
-		global.gamestate[7] = array_last(global.record2)[2];
-		global.gamestate[8] = array_last(global.record2)[3];
+        global.gamestate[5] = array_last(global.record2)[0]; // Last X position
+		global.gamestate[6] = array_last(global.record2)[1]; // Last Y position
+		global.gamestate[7] = array_last(global.record2)[2]; // Last x velocity
+		global.gamestate[8] = array_last(global.record2)[3]; // Last y velocity
 		
 		// Clear out the old recordings
 		global.record1 = [];
 		global.record2 = [];
 		
 		// Restart the gameplay loop
-		global.current_state = "record1t"
+		global.current_state = "record1t";
+		
+		// Move to the recording room
+		room_goto(recording);
     }
 }
