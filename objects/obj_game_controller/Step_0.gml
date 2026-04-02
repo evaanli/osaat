@@ -38,7 +38,7 @@ if (global.current_state == "record1t") {
     global.time = 0;
 } else if (global.current_state == "record2") {
     // Record x, y, velocity and time
-	array_push(global.record2, [obj_player2.x, obj_player2.y, obj_player2.x_vel, obj_player2.y_vel, obj_player1.just_shot, global.time]);
+	array_push(global.record2, [obj_player2.x, obj_player2.y, obj_player2.x_vel, obj_player2.y_vel, obj_player2.just_shot, global.time]);
     
 	// Add time with deltatime
 	global.time += global.dt * 1/60;
@@ -80,7 +80,7 @@ if (global.current_state == "record1t") {
         // Find the index of the first recorded frame whose timestamp is >= global.time
 		// This gives us the "future" frame relative to the current replay time
         var _idx = 0;
-        while (_idx < _len1 && _rec1[_idx][4] < global.time)   // [4] is the stored time
+        while (_idx < _len1 && _rec1[_idx][5] < global.time)   // [5] is the stored time
         {
             _idx++; // Loop through the recording
         }
@@ -105,8 +105,8 @@ if (global.current_state == "record1t") {
             // Between two frames: interpolation
             _p1 = _rec1[_idx-1]; // Previous frame (before global.time)
             _p2 = _rec1[_idx]; // Next frame (after global.time)
-            var _t1 = _p1[4];  // Timestamp of previous frame
-            var _t2 = _p2[4];  // Timestamp of next frame
+            var _t1 = _p1[5];  // Timestamp of previous frame ===================CHANGE=============================
+            var _t2 = _p2[5];  // Timestamp of next frame ===================CHANGE=============================
             var _t = (global.time - _t1) / (_t2 - _t1); // Calculate the interpolation factor based on time difference
             _t = clamp(_t, 0, 1); // If somehow the difference is more than 1 or less than zero, we clamp it to the safe range
         }
@@ -116,6 +116,9 @@ if (global.current_state == "record1t") {
         obj_player1.y = lerp(_p1[1], _p2[1], _t); // Lerp the y value
         obj_player1.x_vel = lerp(_p1[2], _p2[2], _t); // Lerp the x velocity
         obj_player1.y_vel = lerp(_p1[3], _p2[3], _t); // Lerp the y velocity
+	
+		// Calculate gun direction
+		obj_player1.gun_direction = point_direction(obj_player1.x, obj_player1.y, obj_player1.x+obj_player1.x_vel, obj_player1.y-obj_player1.y_vel);
     }
     
     // ----- Player 2 interpolation (same logic) -----
@@ -124,7 +127,7 @@ if (global.current_state == "record1t") {
     if (_len2 > 0)
     {
         var _idx = 0;
-        while (_idx < _len2 && _rec2[_idx][4] < global.time)
+        while (_idx < _len2 && _rec2[_idx][5] < global.time) // CHANGE HERE!!!!!!!!!!!!!!!!!!
         {
             _idx++;
         }
@@ -146,32 +149,51 @@ if (global.current_state == "record1t") {
         {
             _p1 = _rec2[_idx-1];
             _p2 = _rec2[_idx];
-            var _t1 = _p1[4];
-            var _t2 = _p2[4];
+            var _t1 = _p1[5]; // CHANGE HERE!!!!!!!!!!!!!!!!!!!!!!!!!!!
+            var _t2 = _p2[5]; // CHANGE HERE!!!!!!!!!!!!!!!!!!!!!!!!!!!
             var _t = (global.time - _t1) / (_t2 - _t1);
             _t = clamp(_t, 0, 1);
         }
+        
+	    obj_player2.x = lerp(_p1[0], _p2[0], _t);
+	    obj_player2.y = lerp(_p1[1], _p2[1], _t);
+	    obj_player2.x_vel = lerp(_p1[2], _p2[2], _t);
+	    obj_player2.y_vel = lerp(_p1[3], _p2[3], _t);
+	
+		// Calculate gun direction
+		obj_player2.gun_direction = point_direction(obj_player2.x, obj_player2.y, obj_player2.x+obj_player2.x_vel, obj_player2.y-obj_player2.y_vel);
     }
 		
-	// In the replay state, after finding _idx and _t
-	// Check for shot events between the last processed frame and _idx
-	// Player one shooting code
+	// ----- Player 1 shots -----
 	var _shot_idx = global.replay_shot_index1;
-	while (_shot_idx < _len1 && _rec1[_shot_idx][4] <= global.time) {
-		if (_rec1[_shot_idx][4] >= global.previous_replay_time) { // Ensure we only trigger once per shot
-		    if (_rec1[_shot_idx][5]) { // just_shot is true
-		        // Trigger the shot effect for player 1
-		        obj_player1.shoot("replay");
-		    }
-		}
-		_shot_idx++;
+	while (_shot_idx < _len1 && _rec1[_shot_idx][5] <= global.time)   // use [5] for time
+	{
+	    // Only trigger if this frame's time is >= the previous replay time
+	    if (_rec1[_shot_idx][5] >= global.previous_replay_time)
+	    {
+	        if (_rec1[_shot_idx][4])   // just_shot is at index 4
+	        {
+	            obj_player1.shoot("replay");
+	        }
+	    }
+	    _shot_idx++;
 	}
-	global.replay_shot_index1 = _shot_idx;
-        
-    obj_player2.x = lerp(_p1[0], _p2[0], _t);
-    obj_player2.y = lerp(_p1[1], _p2[1], _t);
-    obj_player2.x_vel = lerp(_p1[2], _p2[2], _t);
-    obj_player2.y_vel = lerp(_p1[3], _p2[3], _t);
+	global.replay_shot_index1 = _shot_idx;   // <-- crucial: save progress
+
+	// ----- Player 2 shots (same logic) -----
+	var _shot_idx2 = global.replay_shot_index2;   // use a different variable name
+	while (_shot_idx2 < _len2 && _rec2[_shot_idx2][5] <= global.time)
+	{
+	    if (_rec2[_shot_idx2][5] >= global.previous_replay_time)
+	    {
+	        if (_rec2[_shot_idx2][4])
+	        {
+	            obj_player2.shoot("replay");
+	        }
+	    }
+	    _shot_idx2++;
+	}
+	global.replay_shot_index2 = _shot_idx2;
     if (global.time >= global.time_limit)
     {
 		// Update the gamestate variable
@@ -191,6 +213,9 @@ if (global.current_state == "record1t") {
 		
 		// Restart the gameplay loop
 		global.current_state = "record1t";
+		
+		// Reset the players
+		reset_players();
 		
 		// Move to the recording room
 		room_goto(recording);
