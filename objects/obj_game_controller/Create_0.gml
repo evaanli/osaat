@@ -1,4 +1,4 @@
-global.gamestate = [
+global.last_recorded_state = [
 	100, // player 1 x
 	200, // player 1 y
 	0,   // player 1 xvel
@@ -14,12 +14,12 @@ global.gamestate = [
 global.current_state = "record1t";
 
 // Tracking for player movements
-global.record1 = [];
-global.record2 = [];
+global.player1_recording = [];
+global.player2_recording = [];
 
 // Tracking for projectile movements
-global.record1_projectiles = [];
-global.record2_projectiles = [];
+global.player1_recording_projectiles = [];
+global.player2_recording_projectiles = [];
 
 // Replay shot indexes for each player
 global.replay_shot_index1 = 0;
@@ -33,20 +33,20 @@ transparency_speed = 0.005;
 
 function reset_players() {
 	with (obj_player1) {
-		x = global.gamestate[0];
-		y = global.gamestate[1];
-		x_vel = global.gamestate[2];
-		y_vel = global.gamestate[3];
-		last_shot = -100;
+		x = global.last_recorded_state[0];
+		y = global.last_recorded_state[1];
+		x_vel = global.last_recorded_state[2];
+		y_vel = global.last_recorded_state[3];
+		last_shot = last_shot - global.time_limit;
 		just_shot = false;
 	}
 
 	with (obj_player2) {
-		x = global.gamestate[5];
-		y = global.gamestate[6];
-		x_vel = global.gamestate[7];
-		y_vel = global.gamestate[8];
-		last_shot = -100;
+		x = global.last_recorded_state[5];
+		y = global.last_recorded_state[6];
+		x_vel = global.last_recorded_state[7];
+		y_vel = global.last_recorded_state[8];
+		last_shot = last_shot - global.time_limit;
 		just_shot = false;
 	}
 }

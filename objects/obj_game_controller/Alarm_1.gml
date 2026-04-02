@@ -1,7 +1,7 @@
 global.current_state = "record2";
 
 with (obj_player1) {
-	x = global.gamestate[0];
-	y = global.gamestate[1];
+	x = global.last_recorded_state[0];
+	y = global.last_recorded_state[1];
 	
 }

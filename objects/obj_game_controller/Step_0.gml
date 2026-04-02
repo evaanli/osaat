@@ -24,7 +24,7 @@ if (global.current_state == "replaya") {
     global.time = 0;
 } else if (global.current_state == "record1") {
     // Record x, y, velocity and time for player 1 INCLUDING IF CURRENTLY SHOOTING
-	array_push(global.record1, [obj_player1.x, obj_player1.y, obj_player1.x_vel, obj_player1.y_vel, obj_player1.just_shot, global.time]);
+	array_push(global.player1_recording, [obj_player1.x, obj_player1.y, obj_player1.x_vel, obj_player1.y_vel, obj_player1.just_shot, global.time]);
 	
 	// Add time with deltatime
     global.time += global.dt * 1/60;
@@ -34,7 +34,7 @@ if (global.current_state == "replaya") {
 		// If so, set the current state to the next transition (player2)
         global.current_state = "record1a";
 		
-        // show_debug_message(global.record1);
+        // show_debug_message(global.player1_recording);
     }
 } else if (global.current_state == "record1a") {
 	// Slowly make the characters more transparent
@@ -62,7 +62,7 @@ if (global.current_state == "replaya") {
     global.time = 0;
 } else if (global.current_state == "record2") {
     // Record x, y, velocity and time
-	array_push(global.record2, [obj_player2.x, obj_player2.y, obj_player2.x_vel, obj_player2.y_vel, obj_player2.just_shot, global.time]);
+	array_push(global.player2_recording, [obj_player2.x, obj_player2.y, obj_player2.x_vel, obj_player2.y_vel, obj_player2.just_shot, global.time]);
     
 	// Add time with deltatime
 	global.time += global.dt * 1/60;
@@ -72,7 +72,7 @@ if (global.current_state == "replaya") {
 		// If so, set the current state to the next transition (replay)
         global.current_state = "record2a";
         
-		//show_debug_message(global.record2);
+		//show_debug_message(global.player2_recording);
     }
 } else if (global.current_state == "record2a") {
 	// Slowly make the characters more transparent
@@ -107,7 +107,7 @@ if (global.current_state == "replaya") {
     global.time += global.dt * 1/60;
     
     // Interpolate player 1's position and velocity
-    var _rec1 = global.record1; // Simplicity and also optimization
+    var _rec1 = global.player1_recording; // Simplicity and also optimization
     var _len1 = array_length(_rec1); // Check if the player has anything, otherwise don't do anything
     
 	// Only interpolate if there is anything recorded
@@ -158,7 +158,7 @@ if (global.current_state == "replaya") {
     }
     
     // ----- Player 2 interpolation (same logic) -----
-    var _rec2 = global.record2;
+    var _rec2 = global.player2_recording;
     var _len2 = array_length(_rec2);
     if (_len2 > 0)
     {
@@ -233,19 +233,19 @@ if (global.current_state == "replaya") {
     if (global.time >= global.time_limit)
     {
 		// Update the gamestate variable
-        global.gamestate[0] = array_last(global.record1)[0]; // Last X position
-		global.gamestate[1] = array_last(global.record1)[1]; // Last Y position
-		global.gamestate[2] = array_last(global.record1)[2]; // Last x velocity
-		global.gamestate[3] = array_last(global.record1)[3]; // Last y velocity
+        global.last_recorded_state[0] = array_last(global.player1_recording)[0]; // Last X position
+		global.last_recorded_state[1] = array_last(global.player1_recording)[1]; // Last Y position
+		global.last_recorded_state[2] = array_last(global.player1_recording)[2]; // Last x velocity
+		global.last_recorded_state[3] = array_last(global.player1_recording)[3]; // Last y velocity
 
-        global.gamestate[5] = array_last(global.record2)[0]; // Last X position
-		global.gamestate[6] = array_last(global.record2)[1]; // Last Y position
-		global.gamestate[7] = array_last(global.record2)[2]; // Last x velocity
-		global.gamestate[8] = array_last(global.record2)[3]; // Last y velocity
+        global.last_recorded_state[5] = array_last(global.player2_recording)[0]; // Last X position
+		global.last_recorded_state[6] = array_last(global.player2_recording)[1]; // Last Y position
+		global.last_recorded_state[7] = array_last(global.player2_recording)[2]; // Last x velocity
+		global.last_recorded_state[8] = array_last(global.player2_recording)[3]; // Last y velocity
 		
 		// Clear out the old recordings
-		global.record1 = [];
-		global.record2 = [];
+		global.player1_recording = [];
+		global.player2_recording = [];
 		
 		// Restart the gameplay loop
 		global.current_state = "replaya";
