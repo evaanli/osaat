@@ -28,6 +28,9 @@ global.replay_shot_index2 = 0;
 global.time = 0;
 global.time_limit = 3;
 
+// Graphics/Decoration variables
+transparency_speed = 0.005;
+
 function reset_players() {
 	with (obj_player1) {
 		x = global.gamestate[0];

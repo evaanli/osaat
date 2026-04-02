@@ -1,7 +1,17 @@
 global.dt = delta_time / game_get_speed(gamespeed_microseconds);
-
-if (global.current_state == "record1t") {
+if (global.current_state == "replaya") {
+	// Slowly make the characters more transparent
+	obj_player1.image_alpha -= transparency_speed;
+	obj_player2.image_alpha -= transparency_speed;
 	
+	// If the player becomes fully transparent then move to the next state
+	if (obj_player1.image_alpha <= 0) {
+		global.current_state = "record1t";
+	}
+} else if (global.current_state == "record1t") {
+	// Reset the image transparency to full
+	obj_player1.image_alpha = 1;
+	obj_player2.image_alpha = 1;
 	// Create a ready button if there isn't one already
 	if (!instance_exists(obj_ready_button)) {
 		instance_create_layer(room_width / 2, room_height / 2, recording, obj_ready_button);
@@ -21,12 +31,24 @@ if (global.current_state == "record1t") {
 	// Check if the time is over/equal the time limit
 	if (global.time >= global.time_limit) {
 		// If so, set the current state to the next transition (player2)
-        global.current_state = "record2t";
-		reset_players(); // Resets the players so that the other player doesn't see during transition
+        global.current_state = "record1a";
 		
         // show_debug_message(global.record1);
     }
-} else if (global.current_state == "record2t") {
+} else if (global.current_state == "record1a") {
+	// Slowly make the characters more transparent
+	obj_player1.image_alpha -= transparency_speed;
+	obj_player2.image_alpha -= transparency_speed;
+	
+	// If the player becomes fully transparent then move to the next state
+	if (obj_player1.image_alpha <= 0) {
+		global.current_state = "record2t";
+	}
+} else if (global.current_state == "record2t")  {
+	reset_players(); // Resets the players so that the other player doesn't see during transition
+	// Reset the image transparency to full
+	obj_player1.image_alpha = 1;
+	obj_player2.image_alpha = 1;
 	// Create a ready button if there isn't one already
 	if (!instance_exists(obj_ready_button)) {
 		instance_create_layer(room_width / 2, room_height / 2, recording, obj_ready_button);
@@ -46,12 +68,24 @@ if (global.current_state == "record1t") {
 	// Check if time is over/equal to the time limit
 	if (global.time >= global.time_limit) {
 		// If so, set the current state to the next transition (replay)
-        global.current_state = "replayt";
-		reset_players(); // Resets the players so that the other player doesn't see during transition
+        global.current_state = "record2a";
         
 		//show_debug_message(global.record2);
     }
+} else if (global.current_state == "record2a") {
+	// Slowly make the characters more transparent
+	obj_player1.image_alpha -= transparency_speed;
+	obj_player2.image_alpha -= transparency_speed;
+	
+	// If the player becomes fully transparent then move to the next state
+	if (obj_player1.image_alpha <= 0) {
+		global.current_state = "replayt";
+	}
 } else if (global.current_state == "replayt") {
+	reset_players(); // Resets the players so that the other player doesn't see during transition
+	// Reset the image transparency to full
+	obj_player1.image_alpha = 1;
+	obj_player2.image_alpha = 1;
 	// Create a ready button if there isn't one already
 	if (!instance_exists(obj_ready_button)) {
 		instance_create_layer(room_width / 2, room_height / 2, recording, obj_ready_button);
@@ -212,7 +246,7 @@ if (global.current_state == "record1t") {
 		global.record2 = [];
 		
 		// Restart the gameplay loop
-		global.current_state = "record1t";
+		global.current_state = "replaya";
 		
 		// Reset the players
 		reset_players();
