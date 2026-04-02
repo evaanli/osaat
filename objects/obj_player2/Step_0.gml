@@ -51,3 +51,11 @@ if (global.current_state == "record2") {
 	}
 }
 
+
+// If in replay, check for collision with bullets
+if (global.current_state == "replay") {
+	if (place_meeting(x, y, obj_bullet)) {
+		hp -= 1;
+	}
+}
+
