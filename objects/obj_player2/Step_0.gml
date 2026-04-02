@@ -20,17 +20,15 @@ if (global.current_state == "record2") {
 	
 	just_shot = false;
 	if (keyboard_check(vk_up) and global.time > last_shot + reload_time) {
-		var _projectile = instance_create_layer(x, y, "Instances", obj_bullet);
-		_projectile.rotation = gun_direction;
-		_projectile.shot_speed = 50;
-		
-		last_shot = global.time;
-		just_shot = true;
+		shoot("record");
 	}
 	
 	y_vel -= .3 * _dt;                           // gravity
 	x_vel *= .9;              // friction
 	y_vel = clamp(y_vel, -30, 30);              // speed limit
+	
+	// Calculate gun direction
+	gun_direction = point_direction(x, y, x+x_vel*_dt, y-y_vel*_dt);
 	
 	// Update position
 	x += x_vel * _dt;
