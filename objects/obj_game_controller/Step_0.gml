@@ -9,6 +9,7 @@ if (global.current_state == "replaya") {
 		global.current_state = "record1t";
 	}
 } else if (global.current_state == "record1t") {
+    reset_players(); // Reset the players to previous state
 	// Reset the image transparency to full
 	obj_player1.image_alpha = 1;
 	obj_player2.image_alpha = 1;
@@ -45,7 +46,8 @@ if (global.current_state == "replaya") {
 		global.current_state = "record2t";
 	}
 } else if (global.current_state == "record2t")  {
-	reset_players(); // Resets the players so that the other player doesn't see during transition
+	
+    reset_players(); // Reset the players to previous state
 	// Reset the image transparency to full
 	obj_player1.image_alpha = 1;
 	obj_player2.image_alpha = 1;
@@ -82,7 +84,7 @@ if (global.current_state == "replaya") {
 		global.current_state = "replayt";
 	}
 } else if (global.current_state == "replayt") {
-	reset_players(); // Resets the players so that the other player doesn't see during transition
+    reset_players(); // Reset the players to previous state
 	// Reset the image transparency to full
 	obj_player1.image_alpha = 1;
 	obj_player2.image_alpha = 1;
@@ -247,9 +249,6 @@ if (global.current_state == "replaya") {
 		
 		// Restart the gameplay loop
 		global.current_state = "replaya";
-		
-		// Reset the players
-		reset_players();
 		
 		// Move to the recording room
 		room_goto(recording);
