@@ -1,1 +1,3 @@
-draw_self();
+if (not pressed) {
+	draw_self();
+}

@@ -17,9 +17,17 @@ if (global.current_state == "record1") {
 		x_vel += 2 * _dt
 	}
 	
+	just_shot = false;
+	if (keyboard_check(vk_up) and global.time > last_shot + reload_time) {
+		shoot("record");
+	}
+	
 	y_vel -= .3 * _dt;                           // gravity
 	x_vel *= .9;              // friction
 	y_vel = clamp(y_vel, -30, 30);              // speed limit
+	
+	// Calculate gun direction
+	gun_direction = point_direction(x, y, x+x_vel*_dt, y-y_vel*_dt);
 	
 	// Update position
 	x += x_vel * _dt;

@@ -11,10 +11,20 @@ global.gamestate = [
 	270  // player 2 gun direction
 ]
 
-global.next_projectile_id = 0;
 global.current_state = "record1t";
+
+// Tracking for player movements
 global.record1 = [];
 global.record2 = [];
+
+// Tracking for projectile movements
+global.record1_projectiles = [];
+global.record2_projectiles = [];
+
+// Replay shot indexes for each player
+global.replay_shot_index1 = 0;
+global.replay_shot_index2 = 0;
+
 global.time = 0;
 global.time_limit = 3;
 

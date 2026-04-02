@@ -11,3 +11,5 @@ if (global.current_state == "replayt") {
 }
 
 alarm[0] = 180;
+
+pressed = true;

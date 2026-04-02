@@ -30,7 +30,7 @@
   "origin":9,
   "parent":{
     "name":"gui",
-    "path":"folders/sprites/gui.yy",
+    "path":"folders/assets/sprites/gui.yy",
   },
   "preMultiplyAlpha":false,
   "resourceType":"GMSprite",

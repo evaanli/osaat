@@ -12,8 +12,8 @@ if (global.current_state == "record1t") {
 	// Resets the time
     global.time = 0;
 } else if (global.current_state == "record1") {
-    // Record x, y, velocity and time for player 1
-	array_push(global.record1, [obj_player1.x, obj_player1.y, obj_player1.x_vel, obj_player1.y_vel, global.time]);
+    // Record x, y, velocity and time for player 1 INCLUDING IF CURRENTLY SHOOTING
+	array_push(global.record1, [obj_player1.x, obj_player1.y, obj_player1.x_vel, obj_player1.y_vel, obj_player1.just_shot, global.time]);
 	
 	// Add time with deltatime
     global.time += global.dt * 1/60;
@@ -38,7 +38,7 @@ if (global.current_state == "record1t") {
     global.time = 0;
 } else if (global.current_state == "record2") {
     // Record x, y, velocity and time
-	array_push(global.record2, [obj_player2.x, obj_player2.y, obj_player2.x_vel, obj_player2.y_vel, global.time]);
+	array_push(global.record2, [obj_player2.x, obj_player2.y, obj_player2.x_vel, obj_player2.y_vel, obj_player1.just_shot, global.time]);
     
 	// Add time with deltatime
 	global.time += global.dt * 1/60;
@@ -61,7 +61,12 @@ if (global.current_state == "record1t") {
 	
 	// Resets the time
     global.time = 0;
+	
+	global.replay_shot_index1 = 0;
+	global.replay_shot_index2 = 0;
+	global.previous_replay_time = 0;
 } else if (global.current_state == "replay") {
+	global.previous_replay_time = global.time - global.dt * 1/60;
     // Add time with deltatime
     global.time += global.dt * 1/60;
     
@@ -146,12 +151,27 @@ if (global.current_state == "record1t") {
             var _t = (global.time - _t1) / (_t2 - _t1);
             _t = clamp(_t, 0, 1);
         }
-        
-        obj_player2.x = lerp(_p1[0], _p2[0], _t);
-        obj_player2.y = lerp(_p1[1], _p2[1], _t);
-        obj_player2.x_vel = lerp(_p1[2], _p2[2], _t);
-        obj_player2.y_vel = lerp(_p1[3], _p2[3], _t);
     }
+		
+	// In the replay state, after finding _idx and _t
+	// Check for shot events between the last processed frame and _idx
+	// Player one shooting code
+	var _shot_idx = global.replay_shot_index1;
+	while (_shot_idx < _len1 && _rec1[_shot_idx][4] <= global.time) {
+		if (_rec1[_shot_idx][4] >= global.previous_replay_time) { // Ensure we only trigger once per shot
+		    if (_rec1[_shot_idx][5]) { // just_shot is true
+		        // Trigger the shot effect for player 1
+		        obj_player1.shoot("replay");
+		    }
+		}
+		_shot_idx++;
+	}
+	global.replay_shot_index1 = _shot_idx;
+        
+    obj_player2.x = lerp(_p1[0], _p2[0], _t);
+    obj_player2.y = lerp(_p1[1], _p2[1], _t);
+    obj_player2.x_vel = lerp(_p1[2], _p2[2], _t);
+    obj_player2.y_vel = lerp(_p1[3], _p2[3], _t);
     if (global.time >= global.time_limit)
     {
 		// Update the gamestate variable
