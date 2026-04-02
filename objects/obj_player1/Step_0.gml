@@ -33,21 +33,9 @@ if (global.current_state == "record1") {
 	x += x_vel * _dt;
 	y -= y_vel * _dt;
 	
-	if (x <= 0) {
-		x_vel += 50;
-	}
-	
-	if (y <= 0) {
-		y_vel *= -1;
-	}
-	
-	if (x >= room_width) {
-		x_vel -= 50;
-	}
-	
-	if (y >= room_height) {
-		y_vel *= -1;
-	}
+	x = clamp(x, 30, room_width - 30);
+    y = clamp(y, 45, room_height - 45);
+    
 }
 
 

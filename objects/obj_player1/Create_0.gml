@@ -16,8 +16,8 @@ function shoot(type) {
 	var _projectile = instance_create_layer(x, y, "Instances", obj_bullet);
 	_projectile.rotation = gun_direction;
 	_projectile.shot_speed = 50;
-	_projectile.x += lengthdir_x(120, gun_direction);
-	_projectile.y += lengthdir_y(120, gun_direction);
+	_projectile.x += lengthdir_x(70, gun_direction);
+	_projectile.y += lengthdir_y(70, gun_direction);
 	if (type != "replay") {
 		last_shot = global.time;
 		just_shot = true;
