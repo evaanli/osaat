@@ -17,16 +17,16 @@
     {"$GMFolder":"","%Name":"players","folderPath":"folders/assets/sprites/players.yy","name":"players","resourceType":"GMFolder","resourceVersion":"2.0",},
     {"$GMFolder":"","%Name":"projectiles","folderPath":"folders/assets/sprites/projectiles.yy","name":"projectiles","resourceType":"GMFolder","resourceVersion":"2.0",},
     {"$GMFolder":"","%Name":"objects","folderPath":"folders/objects.yy","name":"objects","resourceType":"GMFolder","resourceVersion":"2.0",},
-    {"$GMFolder":"","%Name":"projectiles","folderPath":"folders/objects/projectiles.yy","name":"projectiles","resourceType":"GMFolder","resourceVersion":"2.0",},
     {"$GMFolder":"","%Name":"gui","folderPath":"folders/objects/gui.yy","name":"gui","resourceType":"GMFolder","resourceVersion":"2.0",},
     {"$GMFolder":"","%Name":"players","folderPath":"folders/objects/players.yy","name":"players","resourceType":"GMFolder","resourceVersion":"2.0",},
+    {"$GMFolder":"","%Name":"projectiles","folderPath":"folders/objects/projectiles.yy","name":"projectiles","resourceType":"GMFolder","resourceVersion":"2.0",},
   ],
   "ForcedPrefabProjectReferences":[],
   "IncludedFiles":[],
   "isEcma":false,
   "LibraryEmitters":[],
   "MetaData":{
-    "IDEVersion":"2024.14.2.213",
+    "IDEVersion":"2024.14.4.221",
   },
   "name":"osaat",
   "resources":[
