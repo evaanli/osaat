@@ -1,4 +1,4 @@
-if (global.current_state == "replay" or global.current_state == "record1") {
+if (global.current_state == "replay" or global.current_state == "replayt" or global.current_state == "record1" or global.current_state == "record1t") {
 	// Draw a simple health bar
 	var bar_width = 300;      // total width of the bar in pixels
 	var bar_height = 36;      // height of the bar

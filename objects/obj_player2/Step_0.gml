@@ -34,17 +34,14 @@ if (global.current_state == "record2") {
 	x += x_vel * _dt;
 	y -= y_vel * _dt;
     
-    // Check if the player has touched the walls
-	if (not x == clamp(x, 30, room_width - 30)) {
-        // If so, reset the x momentum and clamp it within the boundaries
+    x = clamp(x, 30, room_width - 30);
+    y = clamp(y, 45, room_height - 45);
+    
+    if (x == 30 or x == room_width - 30) {
         x_vel = 0;
-        x = clamp(x, 30, room_width - 30);
     }
-    // Same thing for y
-	if (not y == clamp(y, 45, room_width - 45)) {
-        // If so, reset the x momentum and clamp it within the boundaries
+    if (y == 45 or y == room_height - 45) {
         y_vel = 0;
-        y = clamp(y, 45, room_width - 45);
     }
 }
 
