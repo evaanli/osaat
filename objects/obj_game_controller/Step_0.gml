@@ -13,6 +13,7 @@ if (global.current_state == "replaya") {
 	// Reset the image transparency to full
 	obj_player1.image_alpha = 1;
 	obj_player2.image_alpha = 1;
+    obj_arena_parent.image_alpha = 1;
 	// Create a ready button if there isn't one already
 	if (!instance_exists(obj_ready_button)) {
 		instance_create_layer(room_width / 2, room_height / 2, "User_Interface", obj_ready_button);
@@ -40,6 +41,7 @@ if (global.current_state == "replaya") {
 	// Slowly make the characters more transparent
 	obj_player1.image_alpha -= transparency_speed;
 	obj_player2.image_alpha -= transparency_speed;
+    obj_arena_parent.image_alpha -= transparency_speed;
 	
 	// If the player becomes fully transparent then move to the next state
 	if (obj_player1.image_alpha <= 0) {
@@ -51,6 +53,7 @@ if (global.current_state == "replaya") {
 	// Reset the image transparency to full
 	obj_player1.image_alpha = 1;
 	obj_player2.image_alpha = 1;
+    obj_arena_parent.image_alpha = 1;
 	// Create a ready button if there isn't one already
 	if (!instance_exists(obj_ready_button)) {
 		instance_create_layer(room_width / 2, room_height / 2, recording, obj_ready_button);
@@ -78,6 +81,7 @@ if (global.current_state == "replaya") {
 	// Slowly make the characters more transparent
 	obj_player1.image_alpha -= transparency_speed;
 	obj_player2.image_alpha -= transparency_speed;
+    obj_arena_parent.image_alpha -= transparency_speed;
 	
 	// If the player becomes fully transparent then move to the next state
 	if (obj_player1.image_alpha <= 0) {
@@ -88,6 +92,7 @@ if (global.current_state == "replaya") {
 	// Reset the image transparency to full
 	obj_player1.image_alpha = 1;
 	obj_player2.image_alpha = 1;
+    obj_arena_parent.image_alpha = 1;
 	// Create a ready button if there isn't one already
 	if (!instance_exists(obj_ready_button)) {
 		instance_create_layer(room_width / 2, room_height / 2, recording, obj_ready_button);

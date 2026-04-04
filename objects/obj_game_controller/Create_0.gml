@@ -15,6 +15,7 @@ global.player1_max_hp = 3;
 global.player2_max_hp = 3;
 
 function reset_game() {
+    global.map = "circles";
     global.current_state = "record1t";
   
     // Tracking for player movements
@@ -69,4 +70,8 @@ function reset_players() {
         
         image_alpha = 1;
 	}
+    
+    with (obj_arena_parent) {
+        obj_arena_parent.image_alpha = 1;
+    }
 }

@@ -1,6 +1,9 @@
 x_vel = 0;
 y_vel = 0;
 
+previous_x = x;
+previous_y = y;
+
 gun_direction = 90;
 
 last_shot = 0;
@@ -13,8 +16,10 @@ max_hp = global.player1_max_hp;
 
 function shoot(type) {
 	var _projectile = instance_create_layer(x, y, "Instances", obj_bullet);
-	_projectile.rotation = gun_direction;
-	_projectile.shot_speed = 50;
+    _projectile.from_player = 2;
+	_projectile.direction = gun_direction;
+	_projectile.image_angle = gun_direction;
+	_projectile.speed = 50;
 	_projectile.x += lengthdir_x(70, gun_direction);
 	_projectile.y += lengthdir_y(70, gun_direction);
 	if (type != "replay") {
