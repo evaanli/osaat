@@ -11,25 +11,41 @@ global.last_recorded_state = [
 	270  // player 2 gun direction
 ]
 
-global.current_state = "record1t";
+global.player1_max_hp = 3;
+global.player2_max_hp = 3;
 
-// Tracking for player movements
-global.player1_recording = [];
-global.player2_recording = [];
+function reset_game() {
+    global.current_state = "record1t";
+  
+    // Tracking for player movements
+    global.player1_recording = [];
+    global.player2_recording = [];
+    // Tracking for projectile movements
+    global.player1_recording_projectiles = [];
+    global.player2_recording_projectiles = [];
+  
+    // Replay shot indexes for each player
+    global.replay_shot_index1 = 0;
+    global.replay_shot_index2 = 0;
+  
+    // Game variables
+    global.time = 0;
+    global.time_limit = 3;
+    global.winner = noone;
+    
+    obj_player1.hp = global.player1_max_hp;
+    obj_player2.hp = global.player1_max_hp;
+}
 
-// Tracking for projectile movements
-global.player1_recording_projectiles = [];
-global.player2_recording_projectiles = [];
-
-// Replay shot indexes for each player
-global.replay_shot_index1 = 0;
-global.replay_shot_index2 = 0;
-
-global.time = 0;
-global.time_limit = 3;
+reset_game();
 
 // Graphics/Decoration variables
 transparency_speed = 0.005;
+flashed = 0; // Counter for player flashes
+show_game_over_text = false;
+
+// Custom fonts
+game_over_font = font_add("fnt_game_over.ttf", 30, false, false, 32, 126);
 
 function reset_players() {
 	with (obj_player1) {
@@ -39,6 +55,8 @@ function reset_players() {
 		y_vel = global.last_recorded_state[3];
 		last_shot = last_shot - global.time_limit;
 		just_shot = false;
+        
+        image_alpha = 1;
 	}
 
 	with (obj_player2) {
@@ -48,5 +66,7 @@ function reset_players() {
 		y_vel = global.last_recorded_state[8];
 		last_shot = last_shot - global.time_limit;
 		just_shot = false;
+        
+        image_alpha = 1;
 	}
 }

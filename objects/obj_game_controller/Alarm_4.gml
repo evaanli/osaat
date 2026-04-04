@@ -1,0 +1,1 @@
+show_game_over_text = true;

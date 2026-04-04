@@ -15,7 +15,7 @@ if (global.current_state == "replaya") {
 	obj_player2.image_alpha = 1;
 	// Create a ready button if there isn't one already
 	if (!instance_exists(obj_ready_button)) {
-		instance_create_layer(room_width / 2, room_height / 2, recording, obj_ready_button);
+		instance_create_layer(room_width / 2, room_height / 2, "User_Interface", obj_ready_button);
 	}
 	
 	// Waits for the button to be pressed
@@ -252,5 +252,35 @@ if (global.current_state == "replaya") {
 		
 		// Move to the recording room
 		room_goto(recording);
+    }
+    //show_debug_message(global.time);
+} else if (global.current_state == "death_effect") {
+    if (alarm[3] == -1) {
+        alarm[3] = 10;
+        flashed++;
+    }
+    show_debug_message(flashed);
+    
+    if (flashed == 7) {
+        global.current_state = "game_over";
+        flashed = 0;
+    }
+} else if(global.current_state == "game_over") {
+    if (alarm[4] == -1 and show_game_over_text == false) {
+        alarm[4] = 60;
+    }
+    if (show_game_over_text) {
+        if (alarm[5] == -1) {
+            alarm[5] = 120;
+        }
+    }
+    
+} else if (global.current_state == "award") {
+    if (alarm[6] == -1) {
+        alarm[6] = 180;
+    }
+} else if (global.current_state == "re_play") { 
+    if (!instance_exists(obj_replay_button)) {
+        instance_create_layer(room_width/2, room_height/2 + 100, "User_Interface", obj_replay_button);
     }
 }

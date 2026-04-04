@@ -50,6 +50,10 @@ if (global.current_state == "record2") {
 if (global.current_state == "replay") {
 	if (place_meeting(x, y, obj_bullet)) {
 		hp -= 1;
+        if (hp <= 0) {
+            global.winner = "player1";
+            global.current_state = "death_effect";
+        }
 	}
 }
 

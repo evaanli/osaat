@@ -9,7 +9,7 @@ reload_time = .200;
 just_shot = false;
 
 hp = 3;
-max_hp = 3;
+max_hp = global.player1_max_hp;
 
 function shoot(type) {
 	var _projectile = instance_create_layer(x, y, "Instances", obj_bullet);

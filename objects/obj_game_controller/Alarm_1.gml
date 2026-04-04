@@ -1,3 +1,4 @@
+// Alarm to change the record state to player 2
 global.current_state = "record2";
 
 with (obj_player1) {
