@@ -109,7 +109,9 @@ if (global.current_state == "replaya") {
 } else if (global.current_state == "replay") {
 	global.previous_replay_time = global.time - global.dt * 1/60;
     // Add time with deltatime
-    global.time += global.dt * 1/60;
+    if (flashing_player == noone) {
+        global.time += global.dt * 1/60;
+    }
     
     // Interpolate player 1's position and velocity
     var _rec1 = global.player1_recording; // Simplicity and also optimization
@@ -234,6 +236,60 @@ if (global.current_state == "replaya") {
 	    }
 	    _shot_idx2++;
 	}
+    
+    if (flashing_player == noone) {
+        flashing_player = noone;
+        with (obj_player1) { 
+            var _bullets_hit_by_enemy = false;
+            with (obj_bullet) {
+                if (place_meeting(x, y, other.id) && from_player != 1) {
+                    _bullets_hit_by_enemy++;
+                    obj_game_controller.flashing_player = obj_player1;
+                    instance_destroy();
+                }
+            }
+            if (_bullets_hit_by_enemy) {
+                hp -= 1;
+                if (hp <= 0) {
+                    global.winner = "player2";
+                    global.current_state = "death_effect";
+                    obj_game_controller.flashing_player = noone;
+                }
+            }
+        }
+        with (obj_player2) {
+            // If in replay, check for collision with bullets
+            var _bullets_hit_by_enemy = 0;
+            with (obj_bullet) {
+                if (place_meeting(x, y, other.id) && from_player != 2) {
+                    _bullets_hit_by_enemy++;
+                    obj_game_controller.flashing_player = obj_player2;
+                    instance_destroy();
+                }
+            }
+            if (_bullets_hit_by_enemy > 0) {
+                hp -= 1;
+                if (hp <= 0) {
+                    global.winner = "player1";
+                    global.current_state = "death_effect";
+                    obj_game_controller.flashing_player = noone;
+                }
+            }
+        }
+    }
+    
+    
+    if (flashing_player != noone) {
+        if (alarm[7] = -1) {
+            alarm[7] = 15;
+            // Not adding flashed variable here because it's added in alarm 7
+            // so that it adds after it finishes flashing then right as its waiting to flash back
+        }
+        if (flashed == 4) {
+            flashing_player = noone;
+            flashed = 0;
+        }
+    }
 	global.replay_shot_index2 = _shot_idx2;
     if (global.time >= global.time_limit)
     {
@@ -264,7 +320,6 @@ if (global.current_state == "replaya") {
         alarm[3] = 10;
         flashed++;
     }
-    show_debug_message(flashed);
     
     if (flashed == 7) {
         global.current_state = "game_over";

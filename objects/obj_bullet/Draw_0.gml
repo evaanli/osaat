@@ -18,4 +18,4 @@ draw_line(x, y, x + lengthdir_x(100, right_angle_debug), y + lengthdir_y(100, ri
 draw_set_color(c_yellow);
 draw_line(x, y, x + lengthdir_x(120, direction), y + lengthdir_y(120, direction));
 
-draw_set_color(c_white); */
+draw_set_color(c_white); */  

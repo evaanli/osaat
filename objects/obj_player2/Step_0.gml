@@ -49,20 +49,3 @@ if (global.current_state == "record2") {
 }
 
 
-// If in replay, check for collision with bullets
-if (global.current_state == "replay") {
-    var _bullets_hit_by_enemy = 0;
-    with (obj_bullet) {
-        if (place_meeting(x, y, other.id) && from_player != 2) {
-            _bullets_hit_by_enemy++;
-            instance_destroy();
-        }
-    }
-    if (_bullets_hit_by_enemy > 0) {
-        hp -= 1;
-        if (hp <= 0) {
-            global.winner = "player1";
-            global.current_state = "death_effect";
-        }
-    }
-}

@@ -19,7 +19,7 @@ function shoot(type) {
     _projectile.from_player = 2;
 	_projectile.direction = gun_direction;
 	_projectile.image_angle = gun_direction;
-	_projectile.speed = 50;
+	_projectile.saved_speed = 50;
 	_projectile.x += lengthdir_x(70, gun_direction);
 	_projectile.y += lengthdir_y(70, gun_direction);
 	if (type != "replay") {

@@ -44,6 +44,7 @@ reset_game();
 transparency_speed = 0.005;
 flashed = 0; // Counter for player flashes
 show_game_over_text = false;
+flashing_player = noone;
 
 // Custom fonts
 game_over_font = font_add("fnt_game_over.ttf", 30, false, false, 32, 126);
