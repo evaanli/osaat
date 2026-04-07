@@ -1,5 +1,7 @@
 hit_wall = false; // collision flag
 
+saved_speed = 0;
+
 left_angle_debug = 0;
 right_angle_debug = 0;
 

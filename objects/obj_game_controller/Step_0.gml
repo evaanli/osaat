@@ -3,6 +3,7 @@ if (global.current_state == "replaya") {
 	// Slowly make the characters more transparent
 	obj_player1.image_alpha -= transparency_speed;
 	obj_player2.image_alpha -= transparency_speed;
+	obj_arena_parent.image_alpha -= transparency_speed;
 	
 	// If the player becomes fully transparent then move to the next state
 	if (obj_player1.image_alpha <= 0) {
