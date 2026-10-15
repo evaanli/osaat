@@ -47,8 +47,3 @@ class RecordSystem:
         self.full_replay[0] = self.player1_positions
         self.full_replay[1] = self.player2_positions
 
-    
-            
-        
-        
-        

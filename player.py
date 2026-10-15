@@ -15,6 +15,7 @@ class Player:
         # simple rectangle for drawing
         self.player_rect = pygame.Rect(self.x, self.y, self.width, self.height)
 
+    # update physics
     def update(self):
         self.x += self.x_vel
         self.y += self.y_vel
@@ -22,10 +23,11 @@ class Player:
         self.x_vel *= 0.6
         self.y_vel *= 0.6
 
+    # draw the rectangle
+    def draw(self, surface):
         # update player rect
         self.player_rect.x = self.x
         self.player_rect.y = self.y
-
-    def draw(self, surface):
+        
         # rectangle for now
         pygame.draw.rect(surface, self.color, self.player_rect)
