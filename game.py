@@ -70,8 +70,8 @@ while running:
     elif phase == "recording1":
         # convert player movements into x_vel and y_vel
         player_movements = controls.return_movements()
-        player1.x_vel += player_movements[0][1] * player1_speed
-        player1.y_vel += player_movements[0][0] * player1_speed
+        player1.x_vel += player_movements[1] * player1_speed
+        player1.y_vel += player_movements[0] * player1_speed
 
         player1.update()
 
@@ -96,8 +96,8 @@ while running:
     elif phase == "recording2":
         # convert player movements into x_vel and y_vel
         player_movements = controls.return_movements()
-        player2.x_vel += player_movements[1][1] * player2_speed
-        player2.y_vel += player_movements[1][0] * player2_speed
+        player2.x_vel += player_movements[1] * player2_speed
+        player2.y_vel += player_movements[0] * player2_speed
 
         player2.update()
 

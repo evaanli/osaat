@@ -1,21 +1,13 @@
 import pygame
 
-# player 1 controls: wasd
-# player 2 controls: arrow keys
+# player default controls: wasd
 
-def return_movements():
+def return_movements(up=pygame.K_w, left=pygame.K_a, down=pygame.K_s, right=pygame.K_d):
+    
     # collect keypresses
     keys = pygame.key.get_pressed()
     
     return [
-        # player 1
-        [
-            keys[pygame.K_w] * -1 + keys[pygame.K_s],
-            keys[pygame.K_a] * -1 + keys[pygame.K_d],
-        ],
-        # player 2
-        [
-            keys[pygame.K_UP] * -1 + keys[pygame.K_DOWN],
-            keys[pygame.K_LEFT] * -1 + keys[pygame.K_RIGHT],
-        ]
+            keys[up] * -1 + keys[down],
+            keys[left] * -1 + keys[right],
     ]
