@@ -1,6 +1,7 @@
 import pygame
 import player
 import controls
+import record
 import sys
 
 pygame.init()
@@ -29,17 +30,39 @@ player1.color = RED
 player1_speed = 5
 running = True
 
+# initialize recording system
+recording_system = record.RecordSystem()
+recording = False
+
 while running:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
-
+        # single key press            
+        if event.type == pygame.KEYDOWN:
+            # start recording when user presses space key
+            if event.key == pygame.K_SPACE:
+                recording = True
+                # init recording
+                recording_system.timer_system.restart()
+                recording_system.clear()
+                
     screen.fill(BLACK)
 
     # convert player movements into x_vel and y_vel
     player_movements = controls.return_movements()
     player1.x_vel += player_movements[0][1] * player1_speed
     player1.y_vel += player_movements[0][0] * player1_speed
+
+    if recording:
+        recording_system.record(player1, 1)
+    if recording_system.timer_system.get_timestamp() >= 1:
+        recording = False
+        if not recording and recording_system.player1_positions:
+            print("done")
+            print("recording data:")
+            print(recording_system.player1_positions)
+            running = False
     
     player1.update()
     player1.draw(screen)
