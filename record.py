@@ -19,7 +19,7 @@ class TimerSystem:
 class RecordSystem:
     def __init__(self):
         self.player1_positions = {
-        # format is time: position
+            # format is time: [x, y, x_vel, y_vel]
         }
         self.player2_positions = {}
 
@@ -32,9 +32,9 @@ class RecordSystem:
     # record function
     def record(self, player_obj: player.Player, player_number):
         if player_number == 1:
-            self.player1_positions[self.timer_system.get_timestamp()] = [player_obj.x, player_obj.y]
+            self.player1_positions[self.timer_system.get_timestamp()] = [player_obj.x, player_obj.y, player_obj.x_vel, player_obj.y_vel]
         elif player_number == 2:
-            self.player2_positions[self.timer_system.get_timestamp()] = [player_obj.x, player_obj.y]
+            self.player2_positions[self.timer_system.get_timestamp()] = [player_obj.x, player_obj.y, player_obj.x_vel, player_obj.y_vel]
 
     # clear function
     def clear(self):
