@@ -46,6 +46,8 @@ phase = "ready"
 pause_start = 0
 
 while running:
+    dt = clock.tick(FPS) / 1000.0
+
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
@@ -70,10 +72,10 @@ while running:
     elif phase == "recording1":
         # convert player movements into x_vel and y_vel
         player_movements = controls.return_movements()
-        player1.x_vel += player_movements[1] * player1_speed
-        player1.y_vel += player_movements[0] * player1_speed
+        player1.x_vel += player_movements[1] * player1_speed * dt * FPS
+        player1.y_vel += player_movements[0] * player1_speed * dt * FPS
 
-        player1.update()
+        player1.update(dt)
 
         # record player data
         recording_system.record(player1, 1)
@@ -96,10 +98,10 @@ while running:
     elif phase == "recording2":
         # convert player movements into x_vel and y_vel
         player_movements = controls.return_movements()
-        player2.x_vel += player_movements[1] * player2_speed
-        player2.y_vel += player_movements[0] * player2_speed
+        player2.x_vel += player_movements[1] * player2_speed * dt * FPS
+        player2.y_vel += player_movements[0] * player2_speed * dt * FPS
 
-        player2.update()
+        player2.update(dt)
 
         # record player data
         recording_system.record(player2, 2)
@@ -138,8 +140,6 @@ while running:
         player2.draw(screen)
 
     pygame.display.flip()
-
-    clock.tick(FPS)
 
 pygame.quit()
 sys.exit()

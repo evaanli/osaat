@@ -16,12 +16,14 @@ class Player:
         self.player_rect = pygame.Rect(self.x, self.y, self.width, self.height)
 
     # update physics
-    def update(self):
-        self.x += self.x_vel
-        self.y += self.y_vel
+    def update(self, dt):
+        frame_scale = dt * 60
 
-        self.x_vel *= 0.6
-        self.y_vel *= 0.6
+        self.x += self.x_vel * frame_scale
+        self.y += self.y_vel * frame_scale
+
+        self.x_vel *= 0.6 ** frame_scale
+        self.y_vel *= 0.6 ** frame_scale
 
     # draw the rectangle
     def draw(self, surface):
