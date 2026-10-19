@@ -1,6 +1,8 @@
 import pygame
 
 class Player:
+    MAX_HP = 20
+
     def __init__(self):
         self.x = 0
         self.y = 0
@@ -11,6 +13,9 @@ class Player:
         self.height = 150
 
         self.color = (255, 255, 255)
+
+        # health variables
+        self.hp = self.MAX_HP
 
         # simple rectangle for drawing
         self.player_rect = pygame.Rect(self.x, self.y, self.width, self.height)
@@ -24,6 +29,15 @@ class Player:
 
         self.x_vel *= 0.6 ** frame_scale
         self.y_vel *= 0.6 ** frame_scale
+
+    # damage player health
+    def take_damage(self, damage):
+        # prevent health from going below zero
+        self.hp = max(0, self.hp - damage)
+
+    # reset player health
+    def reset_health(self):
+        self.hp = self.MAX_HP
 
     # draw the rectangle
     def draw(self, surface):

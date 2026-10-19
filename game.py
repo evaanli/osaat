@@ -38,7 +38,6 @@ running = True
 game = gameplay.Game(FPS)
 phase = "ready"
 pause_start = 0
-match_end_start = None
 recording_time = 5000
 pause_time = 3000
 
@@ -58,21 +57,19 @@ while running:
                     game.initialize_match_recording()
                 game.initialize_recording()
                 phase = "record1"
-            elif (
-                event.key == pygame.K_BACKSPACE
-                and game.match_recording
-                and match_end_start is None
-            ):
-                # keep recording for one final second
-                match_end_start = pygame.time.get_ticks()
+            elif event.key == pygame.K_BACKSPACE and phase in ("death", "game_over"):
+                # replay the saved match from the beginning
+                if game.match_replay_system is not None:
+                    game.start_match_replay(player1, player2)
+                    phase = "match_replay"
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             if phase == "record1":
                 game.throw_potion(player1, event.pos, 1)
             elif phase == "record2":
                 game.throw_potion(player2, event.pos, 2)
 
-    # Live throws continue to fly during recording and pause phases.
-    if phase not in ("replay", "match_replay"):
+    # live throws continue to fly during recording and pause phases
+    if phase in ("ready", "record1", "pause1", "record2", "pause2", "done"):
         game.update_projectiles(dt)
 
     # clear screen
@@ -112,7 +109,13 @@ while running:
 
     # replays the two player's recordings
     elif phase == "replay":
-        if game.replay(screen, player1, player2):
+        finished = game.replay(screen, player1, player2)
+        if game.dead_player_number is not None:
+            # save the full match as soon as a player dies
+            game.finish_match_recording()
+            game.start_death_animation(game.dead_player_number)
+            phase = "death"
+        elif finished:
             phase = "done"
             pause_start = pygame.time.get_ticks()
 
@@ -122,18 +125,23 @@ while running:
         if pygame.time.get_ticks() - pause_start >= pause_time:
             phase = "ready" # restart the gameplay
 
-    # continuously loop the complete match after recording ends
+    # replay the complete saved match
     elif phase == "match_replay":
-        game.replay_match(screen, player1, player2)
+        finished = game.replay_match(screen, player1, player2)
+        if game.dead_player_number is not None:
+            game.start_death_animation(game.dead_player_number)
+            phase = "death"
+        elif finished:
+            phase = "game_over"
 
-    # backspace ends the match after one more second has been recorded
-    if (
-        match_end_start is not None
-        and pygame.time.get_ticks() - match_end_start >= 500
-    ):
-        game.finish_match_recording()
-        match_end_start = None
-        phase = "match_replay"
+    # play the death animation over the black background
+    elif phase == "death":
+        if game.death_animation(screen, dt, player1, player2):
+            phase = "game_over"
+
+    # freeze on black until backspace is pressed
+    elif phase == "game_over":
+        game.draw_winner(screen, player1, player2)
 
     pygame.display.flip()
 

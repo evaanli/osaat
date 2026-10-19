@@ -97,3 +97,74 @@ class Potion:
                 (round(self.position.x), round(self.position.y)),
                 self.RADIUS,
             )
+
+
+# potion damage area
+class PotionArea:
+    # distance from the center that counts as touching
+    RADIUS = 75
+    # maximum amount of time the area can stay active
+    DURATION = 2.0
+    # damage dealt each time the cooldown allows a hit
+    DAMAGE = 5
+    # time before a player can take area damage again
+    DAMAGE_INTERVAL = 0.75
+    # transparent purple used to show the area
+    COLOR = (170, 75, 255, 75)
+
+    def __init__(self, position, owner, start_time, end_time=None):
+        # center position of the area
+        self.position = pygame.Vector2(position)
+        # player number that threw the potion
+        self.owner = owner
+        # replay time when the potion broke
+        self.start_time = start_time
+        # stop at two seconds or at the replay cutoff
+        self.end_time = min(
+            start_time + self.DURATION,
+            end_time if end_time is not None else start_time + self.DURATION,
+        )
+        # current area state
+        self.elapsed = 0.0
+        self.alive = True
+
+    # update area lifetime
+    def set_time(self, current_time):
+        self.elapsed = max(0.0, current_time - self.start_time)
+        self.alive = current_time < self.end_time
+
+    # check if player is inside the area
+    def contains_player(self, player_obj):
+        # find the point on the player rectangle closest to the circle
+        closest_x = max(
+            player_obj.x,
+            min(self.position.x, player_obj.x + player_obj.width),
+        )
+        closest_y = max(
+            player_obj.y,
+            min(self.position.y, player_obj.y + player_obj.height),
+        )
+        # touching counts when the closest point is inside the radius
+        return self.position.distance_squared_to((closest_x, closest_y)) <= self.RADIUS ** 2
+
+    # draw transparent damage area
+    def draw(self, surface):
+        if not self.alive:
+            return
+
+        # use a separate alpha surface to make the circle transparent
+        diameter = self.RADIUS * 2
+        area_surface = pygame.Surface((diameter, diameter), pygame.SRCALPHA)
+        pygame.draw.circle(
+            area_surface,
+            self.COLOR,
+            (self.RADIUS, self.RADIUS),
+            self.RADIUS,
+        )
+        surface.blit(
+            area_surface,
+            (
+                round(self.position.x - self.RADIUS),
+                round(self.position.y - self.RADIUS),
+            ),
+        )
