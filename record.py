@@ -22,6 +22,7 @@ class RecordSystem:
             # format is time: [x, y, x_vel, y_vel]
         }
         self.player2_positions = {}
+        self.projectile_events = []
 
         # both replays
         self.full_replay = []
@@ -36,14 +37,29 @@ class RecordSystem:
         elif player_number == 2:
             self.player2_positions[self.timer_system.get_timestamp()] = [player_obj.x, player_obj.y, player_obj.x_vel, player_obj.y_vel]
 
+    # record projectile function
+    def record_projectile(
+        self, original, target, player_number, potion_type="harming"):
+        # add projectile info to the projectile events
+        self.projectile_events.append(
+            {
+                "timestamp": self.timer_system.get_timestamp(),
+                "player_number": player_number,
+                "original": tuple(original),
+                "target": tuple(target),
+                "potion_type": potion_type,
+            } # no need for position update because it's calculated upon game run
+        )
+
     # clear function
     def clear(self):
+        # clears all replays
         self.full_replay = []
         self.player1_positions = {}
         self.player2_positions = {}
+        self.projectile_events = []
     
     # merge function
     def merge(self):
         self.full_replay[0] = self.player1_positions
         self.full_replay[1] = self.player2_positions
-
