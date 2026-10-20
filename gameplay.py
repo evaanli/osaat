@@ -11,10 +11,11 @@ class Game:
     def __init__(self, fps=60):
         # management variables
         self.fps = fps
+        self.show_hitboxes = False
 
         # player variables/properties
-        self.player1_speed = 5
-        self.player2_speed = 10
+        self.player1_speed = 1
+        self.player2_speed = 1
 
         # recording and replay system
         self.recording_system = record.RecordSystem()
@@ -38,6 +39,7 @@ class Game:
 
         # player 1 state before recording
         self.player1_original_state = None
+        self.player1_original_sprite_state = None
 
         # death animation variables
         self.dead_player_number = None
@@ -57,11 +59,49 @@ class Game:
             player2.draw(screen)
             player1.draw(screen)
 
-    def draw_scene(self, screen, player1, player2, projectiles=None):
+        # hitboxes stay above both players so they are easy to compare
+        if self.show_hitboxes:
+            player1.draw_hitbox(screen)
+            player2.draw_hitbox(screen)
+
+    # update active players and freeze everyone else on their current frame
+    def update_sprites(
+        self,
+        dt,
+        player1,
+        player2,
+        player1_active=False,
+        player2_active=False,
+    ):
+        if player1_active:
+            player1.update_sprite(dt)
+        else:
+            player1.pause_sprite()
+
+        if player2_active:
+            player2.update_sprite(dt)
+        else:
+            player2.pause_sprite()
+
+    # switch collision debugging on or off
+    def toggle_hitboxes(self):
+        self.show_hitboxes = not self.show_hitboxes
+
+    def draw_scene(
+        self,
+        screen,
+        player1,
+        player2,
+        live_projectile_owner=None,
+    ):
         self.draw_players(screen, player1, player2)
-        for potion_obj in self.projectiles if projectiles is None else projectiles:
-            potion_obj.draw(screen)
-        # draw carried projectiles without updating their flight
+
+        # only show new throws belonging to the player taking this turn
+        for potion_obj in self.projectiles:
+            if potion_obj.owner == live_projectile_owner:
+                potion_obj.draw(screen)
+
+        # carried projectiles are public results from the last replay
         for potion_obj in self.paused_projectiles:
             potion_obj.draw(screen)
 
@@ -77,7 +117,11 @@ class Game:
     def throw_potion(self, player_obj, target, player_number):
         # the player position is the temporary hand location until animations exist
         original = (player_obj.x, player_obj.y)
-        potion_obj = projectile.Potion(original, target)
+        potion_obj = projectile.Potion(
+            original,
+            target,
+            owner=player_number,
+        )
 
         if potion_obj.alive:
             self.projectiles.append(potion_obj)
@@ -89,9 +133,14 @@ class Game:
             potion_obj.type,
         )
 
-    def update_projectiles(self, dt):
+    def update_projectiles(self, dt, active_player_number=None):
         for potion_obj in self.projectiles:
-            potion_obj.update(dt)
+            # only the player currently recording can advance their throws
+            if (
+                active_player_number is None
+                or potion_obj.owner == active_player_number
+            ):
+                potion_obj.update(dt)
         self.projectiles = [
             potion_obj for potion_obj in self.projectiles if potion_obj.alive
         ]
@@ -130,6 +179,7 @@ class Game:
         self.recording_system.timer_system.restart()
         self.projectiles = []
         self.player1_original_state = None
+        self.player1_original_sprite_state = None
 
     # start recording the full match
     def initialize_match_recording(self):
@@ -206,11 +256,13 @@ class Game:
                 player1.x_vel,
                 player1.y_vel,
             )
+            # save the public pose before player 1 starts moving privately
+            self.player1_original_sprite_state = player1.get_sprite_state()
 
         # records the player
         self.record_player(player1, 1, self.player1_speed, dt)
         # draw
-        self.draw_scene(screen, player1, player2)
+        self.draw_scene(screen, player1, player2, live_projectile_owner=1)
         # return if overtime
         return self.recording_system.timer_system.get_timestamp() >= recording_time / 1000
 
@@ -224,6 +276,8 @@ class Game:
                 player1.x_vel,
                 player1.y_vel,
             ) = self.player1_original_state
+            # hide player 1's private walking pose from player 2
+            player1.set_sprite_state(self.player1_original_sprite_state)
 
         # restarts recording timer
         self.recording_system.timer_system.restart()
@@ -232,7 +286,7 @@ class Game:
     def record2(self, screen, dt, player1, player2, recording_time):
         # records second player
         self.record_player(player2, 2, self.player2_speed, dt)
-        self.draw_scene(screen, player1, player2)
+        self.draw_scene(screen, player1, player2, live_projectile_owner=2)
 
         # return if overtime
         return self.recording_system.timer_system.get_timestamp() >= recording_time / 1000
@@ -245,11 +299,11 @@ class Game:
 
     # pause phase
     def pause1(self, screen, player1, player2):
-        self.draw_scene(screen, player1, player2)
+        self.draw_scene(screen, player1, player2, live_projectile_owner=1)
 
     # pause phase
     def pause2(self, screen, player1, player2):
-        self.draw_scene(screen, player1, player2)
+        self.draw_scene(screen, player1, player2, live_projectile_owner=2)
 
     # done phase
     def done(self, screen, player1, player2):
@@ -331,28 +385,62 @@ class Game:
     # draw the player dissolving from top to bottom
     def draw_dissolving_player(self, screen, player_obj, progress):
         block_size = 6
-        player_x = round(player_obj.x)
-        player_y = round(player_obj.y)
-        dissolve_line = player_obj.height * progress
+        sprite_image = (
+            player_obj.sprite.get_image()
+            if player_obj.sprite is not None
+            else None
+        )
 
-        for block_y in range(0, player_obj.height, block_size):
+        if sprite_image is not None:
+            player_x, player_y = player_obj.get_sprite_position()
+            draw_width, draw_height = player_obj.sprite.size
+        else:
+            player_x = round(player_obj.x)
+            player_y = round(player_obj.y)
+            draw_width, draw_height = player_obj.width, player_obj.height
+
+        dissolve_line = draw_height * progress
+
+        for block_y in range(0, draw_height, block_size):
             row = block_y // block_size
-            for block_x in range(0, player_obj.width, block_size):
+            for block_x in range(0, draw_width, block_size):
                 column = block_x // block_size
                 pattern = ((row * 17 + column * 37) % 100) / 100
                 dissolve_offset = (pattern - 0.5) * 20
 
                 if block_y + dissolve_offset > dissolve_line:
-                    pygame.draw.rect(
-                        screen,
-                        player_obj.color,
-                        (
-                            player_x + block_x,
-                            player_y + block_y,
-                            min(block_size, player_obj.width - block_x),
-                            min(block_size, player_obj.height - block_y),
-                        ),
+                    block_rect = pygame.Rect(
+                        block_x,
+                        block_y,
+                        min(block_size, draw_width - block_x),
+                        min(block_size, draw_height - block_y),
                     )
+                    if sprite_image is not None:
+                        screen.blit(
+                            sprite_image,
+                            (player_x + block_x, player_y + block_y),
+                            block_rect,
+                        )
+                    else:
+                        pygame.draw.rect(
+                            screen,
+                            player_obj.color,
+                            block_rect.move(player_x, player_y),
+                        )
+
+    # draw the current player shape using one solid color
+    def draw_player_silhouette(self, screen, player_obj, color):
+        if player_obj.sprite is None:
+            pygame.draw.rect(screen, color, player_obj.get_rect())
+            return
+
+        # the sprite mask keeps transparent pixels transparent
+        sprite_mask = pygame.mask.from_surface(player_obj.sprite.get_image())
+        silhouette = sprite_mask.to_surface(
+            setcolor=(*color[:3], 255),
+            unsetcolor=(0, 0, 0, 0),
+        )
+        screen.blit(silhouette, player_obj.get_sprite_position())
 
     # draw the stored winner after the animation
     def draw_winner(self, screen, player1, player2):
@@ -380,19 +468,15 @@ class Game:
     def death_animation(self, screen, dt, player1, player2):
         self.death_animation_elapsed += dt
         dead_player = player1 if self.dead_player_number == 1 else player2
-        player_rect = pygame.Rect(
-            dead_player.x,
-            dead_player.y,
-            dead_player.width,
-            dead_player.height,
-        )
 
         # flash the player three times
         flash_duration = 1.5
         if self.death_animation_elapsed < flash_duration:
             flash_time = self.death_animation_elapsed % 0.5
-            flash_color = (255, 255, 255) if flash_time < 0.25 else dead_player.color
-            pygame.draw.rect(screen, flash_color, player_rect)
+            if flash_time < 0.25:
+                self.draw_player_silhouette(screen, dead_player, (255, 255, 255))
+            else:
+                dead_player.draw(screen)
             return False
 
         # dissolve the player from top to bottom after flashing

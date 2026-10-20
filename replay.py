@@ -98,6 +98,7 @@ class ReplaySystem:
                 event["original"],
                 event["target"],
                 event["potion_type"],
+                event["player_number"],
             )
             # negative throw times restore time spent flying in older rounds
             # store throw time, owner, and potion object

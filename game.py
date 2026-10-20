@@ -2,6 +2,7 @@ import pygame
 import player
 import gameplay
 import sys
+from pathlib import Path
 
 pygame.init()
 
@@ -21,14 +22,19 @@ BLACK = (0, 0, 0)
 RED = (197, 17, 17)
 BLUE = (0, 128, 255)
 
+# dory animation settings used by both players for now
+ASSET_FOLDER = Path(__file__).resolve().parent / "assets"
+DORY_SPRITES = ASSET_FOLDER / "dory_to"
+DORY_SIZE = (150, 150)
+
 # initialize player 1
-player1 = player.Player()
+player1 = player.Player(DORY_SPRITES, sprite_size=DORY_SIZE)
 player1.x = 400
 player1.y = 300
 player1.color = RED
 
 # initialize player 2
-player2 = player.Player()
+player2 = player.Player(DORY_SPRITES, sprite_size=DORY_SIZE)
 player2.x = 400
 player2.y = 300
 player2.color = BLUE
@@ -51,7 +57,10 @@ while running:
         if event.type == pygame.QUIT:
             running = False
         if (event.type == pygame.KEYDOWN):
-            if (event.key == pygame.K_SPACE and phase == "ready"):
+            if event.key == pygame.K_h:
+                # show or hide the friendly collision squares
+                game.toggle_hitboxes()
+            elif (event.key == pygame.K_SPACE and phase == "ready"):
                 # the first round also starts the full match recording
                 if not game.match_recording:
                     game.initialize_match_recording()
@@ -68,12 +77,17 @@ while running:
             elif phase == "record2":
                 game.throw_potion(player2, event.pos, 2)
 
-    # live throws continue to fly during recording and pause phases
-    if phase in ("ready", "record1", "pause1", "record2", "pause2", "done"):
-        game.update_projectiles(dt)
+    # only throws owned by the player recording this turn can move
+    if phase == "record1":
+        game.update_projectiles(dt, 1)
+    elif phase == "record2":
+        game.update_projectiles(dt, 2)
 
     # clear screen
     screen.fill(BLACK)
+
+    # remember which phase was actually drawn this frame
+    rendered_phase = phase
 
     # phase ready
     if phase == "ready":
@@ -142,6 +156,16 @@ while running:
     # freeze on black until backspace is pressed
     elif phase == "game_over":
         game.draw_winner(screen, player1, player2)
+
+    # do not advance animations during a phase change or frozen phase
+    stable_phase = phase if phase == rendered_phase else None
+    game.update_sprites(
+        dt,
+        player1,
+        player2,
+        player1_active=stable_phase in ("record1", "replay", "match_replay"),
+        player2_active=stable_phase in ("record2", "replay", "match_replay"),
+    )
 
     pygame.display.flip()
 

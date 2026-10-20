@@ -13,9 +13,17 @@ class Potion:
     COLOR = (170, 75, 255)
 
     # harming potion
-    def __init__(self, original=(0, 0), target=(10, 10), potion_type="harming"):
+    def __init__(
+        self,
+        original=(0, 0),
+        target=(10, 10),
+        potion_type="harming",
+        owner=None,
+    ):
         # potion type
         self.type = potion_type
+        # player number controlling this live recording projectile
+        self.owner = owner
         # original position vector
         self.original = pygame.Vector2(original)
         # target position vector
@@ -135,14 +143,16 @@ class PotionArea:
 
     # check if player is inside the area
     def contains_player(self, player_obj):
-        # find the point on the player rectangle closest to the circle
+        # use the smaller friendly player hitbox for collision
+        player_hitbox = player_obj.get_hitbox()
+        # find the point on the hitbox closest to the circle
         closest_x = max(
-            player_obj.x,
-            min(self.position.x, player_obj.x + player_obj.width),
+            player_hitbox.left,
+            min(self.position.x, player_hitbox.right),
         )
         closest_y = max(
-            player_obj.y,
-            min(self.position.y, player_obj.y + player_obj.height),
+            player_hitbox.top,
+            min(self.position.y, player_hitbox.bottom),
         )
         # touching counts when the closest point is inside the radius
         return self.position.distance_squared_to((closest_x, closest_y)) <= self.RADIUS ** 2
