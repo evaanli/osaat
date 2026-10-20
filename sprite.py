@@ -13,6 +13,7 @@ class Sprite:
         frame_time_ms=100,
         size=None,
         loop=True,
+        center=None,
     ):
         # sprite settings
         self.folder = Path(folder)
@@ -35,6 +36,11 @@ class Sprite:
         if size is None:
             size = self.original_frames[0].get_size()
         self.set_size(size)
+        self.center = (
+            center
+            if center is not None
+            else (self.width / 2, self.height / 2)
+        )
 
     # load numbered frames in their numerical order
     def load_frames(self):
@@ -90,6 +96,30 @@ class Sprite:
     def size(self, value):
         self.set_size(value)
 
+    # return the custom center at the current sprite size
+    @property
+    def center(self):
+        return (
+            self.width * self._center_ratio[0],
+            self.height * self._center_ratio[1],
+        )
+
+    @center.setter
+    def center(self, value):
+        self._center_ratio = (
+            float(value[0]) / self.width,
+            float(value[1]) / self.height,
+        )
+
+    # get the center after any sprite flips
+    def get_center(self):
+        center_x, center_y = self.center
+        if self.flip_x:
+            center_x = self.width - center_x
+        if self.flip_y:
+            center_y = self.height - center_y
+        return center_x, center_y
+
     # resize every frame from its original image
     def set_size(self, size):
         width, height = size
@@ -99,6 +129,45 @@ class Sprite:
             pygame.transform.smoothscale(frame, self.size)
             for frame in self.original_frames
         ]
+        # cache visible bounds so transparent png padding does not affect hitboxes
+        self.opaque_rects = [
+            frame.get_bounding_rect(min_alpha=1)
+            for frame in self.frames
+        ]
+        # cache both visible edge points for things such as weapon nozzles
+        self.edge_points = [
+            {
+                "left": self.find_edge_point(frame, "left"),
+                "right": self.find_edge_point(frame, "right"),
+            }
+            for frame in self.frames
+        ]
+
+    # find the middle of one visible edge without transparent png padding
+    def find_edge_point(self, frame, direction):
+        opaque_rect = frame.get_bounding_rect(min_alpha=16)
+        if opaque_rect.width == 0 or opaque_rect.height == 0:
+            return self.width / 2, self.height / 2
+
+        edge_width = min(5, opaque_rect.width)
+        if direction == "left":
+            x_values = range(opaque_rect.left, opaque_rect.left + edge_width)
+            edge_x = opaque_rect.left
+        else:
+            x_values = range(opaque_rect.right - edge_width, opaque_rect.right)
+            edge_x = opaque_rect.right - 1
+
+        visible_y_values = []
+        for x in x_values:
+            for y in range(opaque_rect.top, opaque_rect.bottom):
+                if frame.get_at((x, y)).a >= 16:
+                    visible_y_values.append(y)
+
+        if not visible_y_values:
+            return edge_x, opaque_rect.centery
+
+        edge_y = (min(visible_y_values) + max(visible_y_values)) / 2
+        return edge_x, edge_y
 
     # change the delay between frame changes
     def set_frame_speed(self, frame_time_ms):
@@ -158,6 +227,30 @@ class Sprite:
         if self.flip_x or self.flip_y:
             image = pygame.transform.flip(image, self.flip_x, self.flip_y)
         return image
+
+    # get the visible bounds of the current frame after any flips
+    def get_opaque_rect(self):
+        opaque_rect = self.opaque_rects[self.current_frame].copy()
+
+        if self.flip_x:
+            opaque_rect.x = self.width - opaque_rect.right
+        if self.flip_y:
+            opaque_rect.y = self.height - opaque_rect.bottom
+
+        return opaque_rect
+
+    # get a visible left or right edge point after any sprite flips
+    def get_edge_point(self, direction):
+        source_direction = direction
+        if self.flip_x:
+            source_direction = "left" if direction == "right" else "right"
+
+        edge_x, edge_y = self.edge_points[self.current_frame][source_direction]
+        if self.flip_x:
+            edge_x = self.width - 1 - edge_x
+        if self.flip_y:
+            edge_y = self.height - 1 - edge_y
+        return edge_x, edge_y
 
     # draw at a top left position and return the drawn rectangle
     def draw(self, surface, position):

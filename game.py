@@ -1,6 +1,7 @@
 import pygame
 import player
 import gameplay
+import projectile
 import sys
 from pathlib import Path
 
@@ -11,6 +12,8 @@ screen = pygame.display.set_mode(gameplay.GAME_SIZE, pygame.RESIZABLE)
 pygame.display.set_caption("OSAAT")
 # gameplay always draws at this resolution before window scaling
 game_surface = pygame.Surface(gameplay.GAME_SIZE).convert()
+# avoid decoding the large potion png files on the first throw
+projectile.Potion.preload_assets()
 
 # fps config
 clock = pygame.time.Clock()
@@ -28,15 +31,26 @@ ASSET_FOLDER = Path(__file__).resolve().parent / "assets"
 DORY_SPRITES = ASSET_FOLDER / "dory_to"
 DORY_SIZE = (150, 150)
 DORY_FRAME_TIME_MS = 200
+DORY_POTION_COOLDOWN = 0.33
 MR_DONALD_SPRITES = ASSET_FOLDER / "mr_donald"
 MR_DONALD_SIZE = (300, 300)
 MR_DONALD_FRAME_TIME_MS = 100
+MR_DONALD_HITBOX_SIZE = (200, 56)
+MR_DONALD_HITBOX_OFFSET = (-26, 0)
+# center both directions on the middle of the tank tracks
+MR_DONALD_SPRITE_CENTERS = {
+    "left": (192, 195),
+    "right": (118, 195),
+}
+# fifty hp lets the tank survive nine potion hits
+MR_DONALD_MAX_HP = 50
 
 # initialize player 1
 player1 = player.Player(
     DORY_SPRITES,
     sprite_frame_time_ms=DORY_FRAME_TIME_MS,
     sprite_size=DORY_SIZE,
+    projectile_cooldown=DORY_POTION_COOLDOWN,
 )
 player1.x = 400
 player1.y = 300
@@ -47,6 +61,12 @@ player2 = player.Player(
     MR_DONALD_SPRITES,
     sprite_frame_time_ms=MR_DONALD_FRAME_TIME_MS,
     sprite_size=MR_DONALD_SIZE,
+    hitbox_size=MR_DONALD_HITBOX_SIZE,
+    hitbox_offset=MR_DONALD_HITBOX_OFFSET,
+    sprite_centers=MR_DONALD_SPRITE_CENTERS,
+    max_hp=MR_DONALD_MAX_HP,
+    direction_follows_mouse=True,
+    projectile_type="cannon",
 )
 player2.x = 400
 player2.y = 300
@@ -109,15 +129,23 @@ while running:
             # clicks in a black letterbox bar do not enter gameplay
             if target is not None:
                 if phase == "record1":
-                    game.throw_potion(player1, target, 1)
+                    game.throw_projectile(player1, target, 1)
                 elif phase == "record2":
-                    game.throw_potion(player2, target, 2)
+                    game.throw_projectile(player2, target, 2)
+
+    # convert the mouse for dory's preview and mr donald's horizontal aim
+    mouse_game_position = game.window_to_game(
+        pygame.mouse.get_pos(),
+        screen.get_size(),
+    )
+    if phase == "record2" and mouse_game_position is not None:
+        player2.face_towards_x(mouse_game_position[0])
 
     # only throws owned by the player recording this turn can move
     if phase == "record1":
-        game.update_projectiles(dt, 1)
+        game.update_projectiles(dt, 1, player1)
     elif phase == "record2":
-        game.update_projectiles(dt, 2)
+        game.update_projectiles(dt, 2, player2)
 
     # remember which phase was actually drawn this frame
     rendered_phase = phase
@@ -131,7 +159,14 @@ while running:
 
     # recording player 1
     elif phase == "record1":
-        if game.record1(render_surface, dt, player1, player2, recording_time): # returns true when done
+        if game.record1(
+            render_surface,
+            dt,
+            player1,
+            player2,
+            recording_time,
+            mouse_game_position,
+        ): # returns true when done
             phase = "pause1"
             pause_start = pygame.time.get_ticks()
 
@@ -145,7 +180,14 @@ while running:
 
     # recording player 2
     elif phase == "record2":
-        if game.record2(render_surface, dt, player1, player2, recording_time): # returns true when done
+        if game.record2(
+            render_surface,
+            dt,
+            player1,
+            player2,
+            recording_time,
+            mouse_game_position,
+        ): # returns true when done
             phase = "pause2"
             pause_start = pygame.time.get_ticks()
 

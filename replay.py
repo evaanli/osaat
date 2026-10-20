@@ -70,10 +70,13 @@ class ReplaySystem:
         self.active_areas = []
 
         for event in self.area_events:
-            area = projectile.PotionArea(
+            area = projectile.create_area(
+                event.get("area_type", projectile.PotionArea.TYPE),
                 event["position"],
                 event["owner"],
                 event["start_time"],
+                event.get("damage_applied", False),
+                event.get("visual_variant"),
             )
             area.set_time(0.0)
             if area.alive:
@@ -96,7 +99,7 @@ class ReplaySystem:
         self.reset_effects()
 
     # update projectile function
-    def update_projectiles(self, current_time):
+    def update_projectiles(self, current_time, player1, player2):
         # reset if the replay time moves backwards
         if current_time < self.last_time:
             self.reset_effects()
@@ -104,17 +107,24 @@ class ReplaySystem:
         # create projectiles once their timestamp is reached
         while (self.projectile_index < len(self.projectile_events) and self.projectile_events[self.projectile_index]["timestamp"] <= current_time):
             event = self.projectile_events[self.projectile_index]
-            potion_obj = projectile.Potion(
+            potion_obj = projectile.create_projectile(
+                event["potion_type"],
                 event["original"],
                 event["target"],
-                event["potion_type"],
                 event["player_number"],
+                event.get("visual_variant"),
             )
-            # negative throw times restore time spent flying in older rounds
+            # explicit elapsed time preserves partial charges across rounds
+            event_time = event["timestamp"]
+            potion_obj.replay_elapsed_offset = event.get(
+                "elapsed",
+                max(0.0, -event_time),
+            )
+            throw_time = max(0.0, event_time)
             # store throw time, owner, and potion object
             self.active_projectiles.append(
                 (
-                    event["timestamp"],
+                    throw_time,
                     event["player_number"],
                     potion_obj,
                 )
@@ -124,35 +134,63 @@ class ReplaySystem:
         # update projectiles and create areas when they break
         still_active = []
         for throw_time, owner, potion_obj in self.active_projectiles:
-            # calculate potion position from replay time
-            potion_obj.set_elapsed(current_time - throw_time)
+            # add saved progress before advancing through the new round
+            projectile_elapsed = (
+                potion_obj.replay_elapsed_offset
+                + current_time
+                - throw_time
+            )
+            if projectile_elapsed < potion_obj.charge_time:
+                # keep the real launch origin on the nozzle while charging
+                firing_player = player1 if owner == 1 else player2
+                potion_obj.set_original(
+                    firing_player.get_projectile_origin()
+                )
+            potion_obj.set_elapsed(projectile_elapsed)
             if potion_obj.alive:
                 # keep unfinished flights so game can save them at replay end
                 still_active.append((throw_time, owner, potion_obj))
             else:
-                landing_time = throw_time + potion_obj.travel_time
-                # every area keeps its full lifetime across round boundaries
-                self.active_areas.append(
-                    projectile.PotionArea(
+                landing_time = (
+                    throw_time
+                    + potion_obj.travel_time
+                    - potion_obj.replay_elapsed_offset
+                )
+                if potion_obj.type == "cannon":
+                    # cannonballs create one short impact with distance falloff
+                    impact = projectile.CannonImpact(
                         potion_obj.target,
                         owner,
                         landing_time,
                     )
-                )
+                    impact.set_time(current_time)
+                    self.active_areas.append(impact)
+                else:
+                    # potion areas keep their full lifetime across rounds
+                    self.active_areas.append(
+                        projectile.PotionArea(
+                            potion_obj.target,
+                            owner,
+                            landing_time,
+                            visual_variant=potion_obj.visual_variant,
+                        )
+                    )
         self.active_projectiles = still_active
 
     # convert unfinished flights into events for the next replay
     def get_carried_projectile_events(self):
         carried_events = []
         for throw_time, owner, potion_obj in self.active_projectiles:
-            # a negative timestamp makes replay start at the saved elapsed time
+            # zero starts this round while elapsed restores exact prior progress
             carried_events.append(
                 {
-                    "timestamp": -potion_obj.elapsed,
+                    "timestamp": 0.0,
+                    "elapsed": potion_obj.elapsed,
                     "player_number": owner,
                     "original": tuple(potion_obj.original),
                     "target": tuple(potion_obj.target),
                     "potion_type": potion_obj.type,
+                    "visual_variant": potion_obj.visual_variant,
                 }
             )
         return carried_events
@@ -164,6 +202,9 @@ class ReplaySystem:
                 "position": tuple(area.position),
                 "owner": area.owner,
                 "start_time": -area.elapsed,
+                "area_type": area.TYPE,
+                "damage_applied": getattr(area, "damage_applied", False),
+                "visual_variant": getattr(area, "visual_variant", None),
             }
             for area in self.active_areas
             if area.alive
@@ -214,10 +255,22 @@ class ReplaySystem:
         for area in self.active_areas:
             # update lifetime and remove expired areas
             area.set_time(current_time)
+            opponent_number = 2 if area.owner == 1 else 1
+            opponent = player2 if opponent_number == 2 else player1
+
+            if isinstance(area, projectile.CannonImpact):
+                # a cannon impact can damage its opponent only once
+                if not area.damage_applied:
+                    damage = area.get_damage(opponent)
+                    if damage > 0:
+                        opponent.take_damage(damage)
+                    area.damage_applied = True
+                if area.alive:
+                    still_active.append(area)
+                continue
+
             if area.alive:
                 # check the opponent of the player who threw the potion
-                opponent_number = 2 if area.owner == 1 else 1
-                opponent = player2 if opponent_number == 2 else player1
                 if area.contains_player(opponent):
                     touching_area[opponent_number] = True
                 still_active.append(area)
@@ -260,8 +313,14 @@ class ReplaySystem:
             # interpolate the states
             state = [
                 self.lerp(a, b, alpha)
-                for a, b in zip(states[left], states[right])
+                for a, b in zip(states[left][:4], states[right][:4])
             ]
+            if len(states[left]) > 4 and len(states[right]) > 4:
+                state.append(
+                    states[left][4]
+                    if alpha < 0.5
+                    else states[right][4]
+                )
 
         # apply the states
         (
@@ -269,7 +328,10 @@ class ReplaySystem:
             player_obj.y,
             player_obj.x_vel,
             player_obj.y_vel,
-        ) = state
+        ) = state[:4]
+        if len(state) > 4:
+            direction = "left" if state[4] < 0 else "right"
+            player_obj.set_facing_direction(direction)
 
     # gameplay function for replay
     def play_out(self, player1, player2, current_time=None):
@@ -289,7 +351,7 @@ class ReplaySystem:
         self.apply_track(player1, self.tracks[0], current_time)
         self.apply_track(player2, self.tracks[1], current_time)
         # update projectile timeline
-        self.update_projectiles(current_time)
+        self.update_projectiles(current_time, player1, player2)
         # update damage areas during replay
         self.update_areas(current_time, player1, player2)
         self.last_time = current_time

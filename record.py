@@ -32,24 +32,42 @@ class RecordSystem:
 
     # record function
     def record(self, player_obj: player.Player, player_number):
+        # negative and positive values preserve left and right during replay
+        facing_value = -1 if player_obj.facing_direction == "left" else 1
+        state = [
+            player_obj.x,
+            player_obj.y,
+            player_obj.x_vel,
+            player_obj.y_vel,
+            facing_value,
+        ]
         if player_number == 1:
-            self.player1_positions[self.timer_system.get_timestamp()] = [player_obj.x, player_obj.y, player_obj.x_vel, player_obj.y_vel]
+            self.player1_positions[self.timer_system.get_timestamp()] = state
         elif player_number == 2:
-            self.player2_positions[self.timer_system.get_timestamp()] = [player_obj.x, player_obj.y, player_obj.x_vel, player_obj.y_vel]
+            self.player2_positions[self.timer_system.get_timestamp()] = state
 
     # record projectile function
     def record_projectile(
-        self, original, target, player_number, potion_type="harming"):
+        self,
+        original,
+        target,
+        player_number,
+        potion_type="harming",
+        visual_variant=None,
+    ):
         # add projectile info to the projectile events
-        self.projectile_events.append(
-            {
-                "timestamp": self.timer_system.get_timestamp(),
-                "player_number": player_number,
-                "original": tuple(original),
-                "target": tuple(target),
-                "potion_type": potion_type,
-            } # no need for position update because it's calculated upon game run
-        )
+        event = {
+            "timestamp": self.timer_system.get_timestamp(),
+            "player_number": player_number,
+            "original": tuple(original),
+            "target": tuple(target),
+            "potion_type": potion_type,
+            # replay the same random colour chosen for the live throw
+            "visual_variant": visual_variant,
+        }
+        self.projectile_events.append(event)
+        # live charging projectiles update this event with their final origin
+        return event
 
     # clear function
     def clear(self):

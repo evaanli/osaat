@@ -36,8 +36,10 @@ class Game:
         # end time of every round in the full match timeline
         self.match_round_end_times = []
 
-        # live potion projectiles
+        # live projectiles
         self.projectiles = []
+        # remaining active-turn cooldown for each player's next throw
+        self.projectile_cooldowns = {1: 0.0, 2: 0.0}
         # unfinished replay projectiles waiting for the next round
         # events rebuild flight state when the next replay starts
         self.carried_projectile_events = []
@@ -156,10 +158,15 @@ class Game:
         player1,
         player2,
         live_projectile_owner=None,
+        throw_preview=None,
     ):
         # carried areas stay visible but do not update outside replay
         for area in self.paused_areas:
             area.draw(screen)
+
+        if throw_preview is not None:
+            player_obj, mouse_position = throw_preview
+            self.draw_potion_preview(screen, player_obj, mouse_position)
 
         self.draw_players(screen, player1, player2)
 
@@ -172,42 +179,133 @@ class Game:
         for potion_obj in self.paused_projectiles:
             potion_obj.draw(screen)
 
+    # draw dory's curved aiming guide and highlighted landing area
+    def draw_potion_preview(self, screen, player_obj, mouse_position):
+        if mouse_position is None:
+            return
+
+        original = pygame.Vector2(player_obj.get_projectile_origin())
+        target = projectile.Potion.get_limited_target(
+            original,
+            mouse_position,
+        )
+        arc_height = projectile.Potion.get_arc_height(original, target)
+
+        preview = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
+        points = []
+        for step in range(25):
+            progress = step / 24
+            ground_position = original.lerp(target, progress)
+            height = 4.0 * arc_height * progress * (1.0 - progress)
+            points.append(
+                (
+                    round(ground_position.x),
+                    round(ground_position.y - height),
+                )
+            )
+
+        pygame.draw.lines(preview, (255, 255, 255, 150), False, points, 4)
+        landing_center = round(target.x), round(target.y)
+        pygame.draw.circle(
+            preview,
+            (255, 255, 255, 35),
+            landing_center,
+            projectile.PotionArea.PREVIEW_RADIUS,
+        )
+        pygame.draw.circle(
+            preview,
+            (255, 255, 255, 190),
+            landing_center,
+            projectile.PotionArea.PREVIEW_RADIUS,
+            3,
+        )
+        screen.blit(preview, (0, 0))
+
     # draw a health bar above a player
     def draw_health_bar(self, screen, player_obj):
         bar_x = round(player_obj.x)
         # taller sprites still keep the bar above their visible image
         bar_y = player_obj.get_sprite_position()[1] - 14
         bar_width = player_obj.width
-        health_width = round(bar_width * player_obj.hp / player_obj.MAX_HP)
+        health_width = round(bar_width * player_obj.hp / player_obj.max_hp)
         pygame.draw.rect(screen, (45, 45, 45), (bar_x, bar_y, bar_width, 8))
         pygame.draw.rect(screen, (50, 210, 80), (bar_x, bar_y, health_width, 8))
 
-    def throw_potion(self, player_obj, target, player_number):
-        # the player position is the temporary hand location until animations exist
-        original = (player_obj.x, player_obj.y)
-        potion_obj = projectile.Potion(
-            original,
-            target,
-            owner=player_number,
-        )
+    # start this player's configured projectile from its firing point
+    def throw_projectile(self, player_obj, target, player_number):
+        projectile_type = player_obj.projectile_type
 
-        if potion_obj.alive:
-            self.projectiles.append(potion_obj)
+        # reject another throw until this player's active-time cooldown ends
+        if self.projectile_cooldowns.get(player_number, 0.0) > 0.0:
+            return None
 
-        self.recording_system.record_projectile(
+        # only one cannonball can charge at a time for this player
+        if projectile_type == "cannon" and any(
+            projectile_obj.owner == player_number
+            and projectile_obj.type == "cannon"
+            and projectile_obj.charging
+            for projectile_obj in self.projectiles
+        ):
+            return None
+
+        if player_obj.direction_follows_mouse:
+            player_obj.face_towards_x(target[0])
+
+        original = player_obj.get_projectile_origin()
+        projectile_obj = projectile.create_projectile(
+            projectile_type,
             original,
             target,
             player_number,
-            potion_obj.type,
         )
 
-    def update_projectiles(self, dt, active_player_number=None):
+        if projectile_obj.alive:
+            self.projectiles.append(projectile_obj)
+
+        projectile_obj.recording_event = self.recording_system.record_projectile(
+            original,
+            projectile_obj.target,
+            player_number,
+            projectile_obj.type,
+            projectile_obj.visual_variant,
+        )
+        self.projectile_cooldowns[player_number] = (
+            player_obj.projectile_cooldown
+        )
+        return projectile_obj
+
+    # keep the old method name for potion callers
+    def throw_potion(self, player_obj, target, player_number):
+        return self.throw_projectile(player_obj, target, player_number)
+
+    def update_projectiles(
+        self,
+        dt,
+        active_player_number=None,
+        active_player=None,
+    ):
+        # cooldown time moves only during its owner's active recording turn
+        if active_player_number is not None:
+            self.projectile_cooldowns[active_player_number] = max(
+                0.0,
+                self.projectile_cooldowns.get(active_player_number, 0.0)
+                - max(0.0, dt),
+            )
+
         for potion_obj in self.projectiles:
             # only the player currently recording can advance their throws
             if (
                 active_player_number is None
                 or potion_obj.owner == active_player_number
             ):
+                # keep a cannon charge attached until its firing frame
+                if potion_obj.charging and active_player is not None:
+                    potion_obj.set_original(
+                        active_player.get_projectile_origin()
+                    )
+                    potion_obj.recording_event["original"] = tuple(
+                        potion_obj.original
+                    )
                 potion_obj.update(dt)
         self.projectiles = [
             potion_obj for potion_obj in self.projectiles if potion_obj.alive
@@ -226,7 +324,14 @@ class Game:
             self.winner_player_number = 1
 
     # recording function
-    def record_player(self, player_obj, player_number, speed, dt):
+    def record_player(
+        self,
+        player_obj,
+        player_number,
+        speed,
+        dt,
+        aim_x=None,
+    ):
         # collects movements from player object
         player_movements = controls.return_movements()
         # apply movements from movement vector
@@ -235,6 +340,10 @@ class Game:
 
         # update player object
         player_obj.update(dt, self.game_area)
+        if player_obj.direction_follows_mouse and aim_x is not None:
+            player_obj.face_towards_x(aim_x)
+        else:
+            player_obj.update_facing_from_velocity()
         # update player timeline
         self.recording_system.record(player_obj, player_number)
 
@@ -262,6 +371,7 @@ class Game:
         self.carried_area_events = []
         self.carried_area_damage_state = None
         self.paused_areas = []
+        self.projectile_cooldowns = {1: 0.0, 2: 0.0}
         self.dead_player_number = None
         self.winner_player_number = None
 
@@ -318,7 +428,15 @@ class Game:
         self.match_replay_system.restart()
 
     # record player 1 phase
-    def record1(self, screen, dt, player1, player2, recording_time):
+    def record1(
+        self,
+        screen,
+        dt,
+        player1,
+        player2,
+        recording_time,
+        mouse_position=None,
+    ):
         # save player 1 state before their turn
         if self.player1_original_state is None:
             self.player1_original_state = (
@@ -333,7 +451,18 @@ class Game:
         # records the player
         self.record_player(player1, 1, self.player1_speed, dt)
         # draw
-        self.draw_scene(screen, player1, player2, live_projectile_owner=1)
+        throw_preview = (
+            (player1, mouse_position)
+            if mouse_position is not None
+            else None
+        )
+        self.draw_scene(
+            screen,
+            player1,
+            player2,
+            live_projectile_owner=1,
+            throw_preview=throw_preview,
+        )
         # return if overtime
         return self.recording_system.timer_system.get_timestamp() >= recording_time / 1000
 
@@ -354,9 +483,18 @@ class Game:
         self.recording_system.timer_system.restart()
 
     # record player 2 phase
-    def record2(self, screen, dt, player1, player2, recording_time):
+    def record2(
+        self,
+        screen,
+        dt,
+        player1,
+        player2,
+        recording_time,
+        mouse_position=None,
+    ):
         # records second player
-        self.record_player(player2, 2, self.player2_speed, dt)
+        aim_x = mouse_position[0] if mouse_position is not None else None
+        self.record_player(player2, 2, self.player2_speed, dt, aim_x)
         self.draw_scene(screen, player1, player2, live_projectile_owner=2)
 
         # return if overtime
@@ -387,7 +525,7 @@ class Game:
         # add this round directly to the continuous match recording
         self.record_round()
 
-        # carried events use negative time and new throws use normal time
+        # carried events include saved charge or flight progress
         replay_events = (
             self.carried_projectile_events
             + self.recording_system.projectile_events
