@@ -1,4 +1,6 @@
 import controls
+import drawing
+import math
 import projectile
 import pygame
 import record
@@ -191,35 +193,110 @@ class Game:
         )
         arc_height = projectile.Potion.get_arc_height(original, target)
 
-        preview = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
+        # use many curve samples before supersampling the complete guide
         points = []
-        for step in range(25):
-            progress = step / 24
+        for step in range(65):
+            progress = step / 64
             ground_position = original.lerp(target, progress)
             height = 4.0 * arc_height * progress * (1.0 - progress)
             points.append(
-                (
-                    round(ground_position.x),
-                    round(ground_position.y - height),
+                pygame.Vector2(
+                    ground_position.x,
+                    ground_position.y - height,
                 )
             )
 
-        pygame.draw.lines(preview, (255, 255, 255, 150), False, points, 4)
-        landing_center = round(target.x), round(target.y)
-        pygame.draw.circle(
-            preview,
-            (255, 255, 255, 35),
-            landing_center,
-            projectile.PotionArea.PREVIEW_RADIUS,
+        landing_radius = projectile.PotionArea.PREVIEW_RADIUS
+        margin = 10
+        left = math.floor(
+            min(min(point.x for point in points), target.x - landing_radius)
+            - margin
         )
-        pygame.draw.circle(
-            preview,
-            (255, 255, 255, 190),
-            landing_center,
-            projectile.PotionArea.PREVIEW_RADIUS,
-            3,
+        top = math.floor(
+            min(min(point.y for point in points), target.y - landing_radius)
+            - margin
         )
-        screen.blit(preview, (0, 0))
+        right = math.ceil(
+            max(max(point.x for point in points), target.x + landing_radius)
+            + margin
+        )
+        bottom = math.ceil(
+            max(max(point.y for point in points), target.y + landing_radius)
+            + margin
+        )
+
+        # draw large and shrink once for smooth curves, rings, and round ends
+        scale = 3
+        preview_size = max(1, right - left), max(1, bottom - top)
+        high_resolution_preview = pygame.Surface(
+            (preview_size[0] * scale, preview_size[1] * scale),
+            pygame.SRCALPHA,
+        )
+        scaled_points = [
+            (
+                round((point.x - left) * scale),
+                round((point.y - top) * scale),
+            )
+            for point in points
+        ]
+
+        glow_width = 8 * scale
+        line_width = 3 * scale
+        pygame.draw.lines(
+            high_resolution_preview,
+            (255, 255, 255, 45),
+            False,
+            scaled_points,
+            glow_width,
+        )
+        pygame.draw.lines(
+            high_resolution_preview,
+            (255, 255, 255, 205),
+            False,
+            scaled_points,
+            line_width,
+        )
+        for point in (scaled_points[0], scaled_points[-1]):
+            drawing.draw_smooth_circle(
+                high_resolution_preview,
+                (255, 255, 255, 45),
+                point,
+                glow_width / 2,
+            )
+            drawing.draw_smooth_circle(
+                high_resolution_preview,
+                (255, 255, 255, 205),
+                point,
+                line_width / 2,
+            )
+
+        landing_center = (
+            round((target.x - left) * scale),
+            round((target.y - top) * scale),
+        )
+        drawing.draw_smooth_circle(
+            high_resolution_preview,
+            (255, 255, 255, 45),
+            landing_center,
+            (landing_radius + 4) * scale,
+        )
+        drawing.draw_smooth_circle(
+            high_resolution_preview,
+            (255, 255, 255, 220),
+            landing_center,
+            landing_radius * scale,
+        )
+        drawing.draw_smooth_circle(
+            high_resolution_preview,
+            (255, 255, 255, 42),
+            landing_center,
+            (landing_radius - 3) * scale,
+        )
+        preview = pygame.transform.smoothscale(
+            high_resolution_preview,
+            preview_size,
+        )
+        screen.blit(preview, (left, top))
 
     # draw a health bar above a player
     def draw_health_bar(self, screen, player_obj):

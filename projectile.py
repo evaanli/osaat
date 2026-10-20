@@ -4,6 +4,8 @@ from pathlib import Path
 
 import pygame
 
+import drawing
+
 
 POTION_SPRITE_FOLDER = (
     Path(__file__).resolve().parent / "assets" / "dory_to" / "potions"
@@ -231,7 +233,7 @@ class Potion:
 
         variants = self.get_sprite_variants()
         if self.visual_variant is None or not variants:
-            pygame.draw.circle(
+            drawing.draw_smooth_circle(
                 surface,
                 self.COLOR,
                 (round(self.position.x), round(self.position.y)),
@@ -415,19 +417,20 @@ class PotionArea:
             return
 
         # use a separate alpha surface to make the circle transparent
-        diameter = self.RADIUS * 2
+        padding = 2
+        diameter = (self.RADIUS + padding) * 2
         area_surface = pygame.Surface((diameter, diameter), pygame.SRCALPHA)
-        pygame.draw.circle(
+        drawing.draw_smooth_circle(
             area_surface,
             self.color,
-            (self.RADIUS, self.RADIUS),
+            (self.RADIUS + padding, self.RADIUS + padding),
             self.RADIUS,
         )
         surface.blit(
             area_surface,
             (
-                round(self.position.x - self.RADIUS),
-                round(self.position.y - self.RADIUS),
+                round(self.position.x - self.RADIUS - padding),
+                round(self.position.y - self.RADIUS - padding),
             ),
         )
 
@@ -483,19 +486,20 @@ class CannonImpact:
         progress = min(1.0, self.elapsed / self.DURATION)
         radius = max(1, round(self.RADIUS * (0.5 + progress * 0.5)))
         alpha = max(0, round(self.COLOR[3] * (1.0 - progress)))
-        diameter = radius * 2
+        padding = 2
+        diameter = (radius + padding) * 2
         impact_surface = pygame.Surface((diameter, diameter), pygame.SRCALPHA)
-        pygame.draw.circle(
+        drawing.draw_smooth_circle(
             impact_surface,
             (*self.COLOR[:3], alpha),
-            (radius, radius),
+            (radius + padding, radius + padding),
             radius,
         )
         surface.blit(
             impact_surface,
             (
-                round(self.position.x - radius),
-                round(self.position.y - radius),
+                round(self.position.x - radius - padding),
+                round(self.position.y - radius - padding),
             ),
         )
 
