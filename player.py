@@ -69,9 +69,24 @@ class Player:
                 f"sprite folder needs 0.png or animation subfolders: {folder}"
             )
 
+        # support short left and right folder names used by some characters
+        if "walk_left" not in self.animations and "left" in self.animations:
+            self.animations["walk_left"] = self.animations["left"]
+        if "walk_right" not in self.animations and "right" in self.animations:
+            self.animations["walk_right"] = self.animations["right"]
+
         # use mirrored left frames when a separate right animation is missing
         if "walk_right" not in self.animations and "walk_left" in self.animations:
             self.animations["walk_right"] = self.animations["walk_left"]
+
+        # characters without idle art begin on the first right or left frame
+        if "idle" not in self.animations:
+            idle_animation = self.animations.get(
+                "walk_right",
+                self.animations.get("walk_left"),
+            )
+            if idle_animation is not None:
+                self.animations["idle"] = idle_animation
 
         first_animation = (
             "idle" if "idle" in self.animations else next(iter(self.animations))
@@ -182,8 +197,31 @@ class Player:
             hitbox_size,
         )
 
-    # update physics
-    def update(self, dt):
+    # keep the full visible player inside the gameplay rectangle
+    def constrain_to(self, game_area):
+        sprite_width = self.sprite.width if self.sprite is not None else self.width
+        sprite_height = self.sprite.height if self.sprite is not None else self.height
+        horizontal_overhang = max(0.0, (sprite_width - self.width) / 2)
+        top_overhang = max(0.0, sprite_height - self.height)
+
+        minimum_x = game_area.left + horizontal_overhang
+        maximum_x = game_area.right - self.width - horizontal_overhang
+        minimum_y = game_area.top + top_overhang
+        maximum_y = game_area.bottom - self.height
+
+        old_x = self.x
+        old_y = self.y
+        self.x = max(minimum_x, min(self.x, maximum_x))
+        self.y = max(minimum_y, min(self.y, maximum_y))
+
+        # stop velocity on an axis when that boundary is reached
+        if self.x != old_x:
+            self.x_vel = 0
+        if self.y != old_y:
+            self.y_vel = 0
+
+    # update physics and apply the optional gameplay boundary
+    def update(self, dt, game_area=None):
         frame_scale = dt * 60
 
         self.x += self.x_vel * frame_scale
@@ -191,6 +229,9 @@ class Player:
 
         self.x_vel *= 0.6 ** frame_scale
         self.y_vel *= 0.6 ** frame_scale
+
+        if game_area is not None:
+            self.constrain_to(game_area)
 
     # damage player health
     def take_damage(self, damage):

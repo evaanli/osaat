@@ -11,6 +11,8 @@ class ReplaySystem:
         player2_positions,
         projectile_events=None,
         round_end_times=None,
+        area_events=None,
+        area_damage_state=None,
     ):
         # format the track
         # player tracks
@@ -28,21 +30,24 @@ class ReplaySystem:
             [times[-1] for times, states in self.tracks if times],
             default=0.0,
         )
-        # round boundaries stop damage areas without stopping flying potions
+        # round boundaries are metadata because effects continue through them
         self.round_end_times = sorted(round_end_times or [self.duration])
+        # carried areas use negative start times to restore elapsed lifetime
+        self.area_events = area_events or []
+        area_damage_state = area_damage_state or {}
+        self.initial_area_damage_cooldowns = {
+            1: area_damage_state.get("cooldowns", {}).get(1, 0.0),
+            2: area_damage_state.get("cooldowns", {}).get(2, 0.0),
+        }
+        self.initial_players_touching_area = {
+            1: area_damage_state.get("touching", {}).get(1, False),
+            2: area_damage_state.get("touching", {}).get(2, False),
+        }
         # safe set start time value
         self.start_time = None
-        # projectile replay variables
-        self.projectile_index = 0
-        self.active_projectiles = []
-        self.active_areas = []
+        # replay effect variables
         self.last_time = 0.0
-        # next replay time each player is allowed to take area damage
-        self.area_damage_cooldowns = {1: 0.0, 2: 0.0}
-        # remembers if each player was touching any area last frame
-        self.players_touching_area = {1: False, 2: False}
-        # used to reset damage cooldowns between saved rounds
-        self.current_round_index = 0
+        self.reset_effects()
 
     # formats the track into two different elements of times and states
     def prepare_track(self, positions):
@@ -58,38 +63,43 @@ class ReplaySystem:
         # simple linear interpolate function
         return start + (end - start) * alpha
 
-    # initiates the recording clock
-    def restart(self):
-        self.start_time = perf_counter()
-        # reset projectile replay
+    # reset projectiles, carried areas, and their damage state
+    def reset_effects(self):
         self.projectile_index = 0
         self.active_projectiles = []
         self.active_areas = []
+
+        for event in self.area_events:
+            area = projectile.PotionArea(
+                event["position"],
+                event["owner"],
+                event["start_time"],
+            )
+            area.set_time(0.0)
+            if area.alive:
+                self.active_areas.append(area)
+
+        # next replay time each player is allowed to take area damage
+        self.area_damage_cooldowns = (
+            self.initial_area_damage_cooldowns.copy()
+        )
+        # remember if each player was touching an area at the prior cutoff
+        self.players_touching_area = (
+            self.initial_players_touching_area.copy()
+        )
         self.last_time = 0.0
-        # reset replay-only potion damage state
-        self.area_damage_cooldowns = {1: 0.0, 2: 0.0}
-        self.players_touching_area = {1: False, 2: False}
-        self.current_round_index = 0
+
+    # initiates the recording clock
+    def restart(self):
+        self.start_time = perf_counter()
+        # reset replay effects
+        self.reset_effects()
 
     # update projectile function
     def update_projectiles(self, current_time):
         # reset if the replay time moves backwards
         if current_time < self.last_time:
-            self.projectile_index = 0
-            self.active_projectiles = []
-            self.active_areas = []
-            # reset damage state when replay is moved backwards
-            self.area_damage_cooldowns = {1: 0.0, 2: 0.0}
-            self.players_touching_area = {1: False, 2: False}
-            self.current_round_index = 0
-
-        # count how many saved round boundaries replay has passed
-        round_index = bisect_right(self.round_end_times[:-1], current_time)
-        # reset cooldowns when replay enters the next recorded round
-        if round_index > self.current_round_index:
-            self.area_damage_cooldowns = {1: 0.0, 2: 0.0}
-            self.players_touching_area = {1: False, 2: False}
-            self.current_round_index = round_index
+            self.reset_effects()
 
         # create projectiles once their timestamp is reached
         while (self.projectile_index < len(self.projectile_events) and self.projectile_events[self.projectile_index]["timestamp"] <= current_time):
@@ -121,27 +131,15 @@ class ReplaySystem:
                 still_active.append((throw_time, owner, potion_obj))
             else:
                 landing_time = throw_time + potion_obj.travel_time
-                area_end_time = self.get_area_end_time(landing_time)
-                # create the damage area if the potion landed before cutoff
-                if landing_time < area_end_time:
-                    self.active_areas.append(
-                        projectile.PotionArea(
-                            potion_obj.target,
-                            owner,
-                            landing_time,
-                            area_end_time,
-                        )
+                # every area keeps its full lifetime across round boundaries
+                self.active_areas.append(
+                    projectile.PotionArea(
+                        potion_obj.target,
+                        owner,
+                        landing_time,
                     )
+                )
         self.active_projectiles = still_active
-
-    # get the end of the round where a potion lands
-    def get_area_end_time(self, landing_time):
-        # find the first round boundary after the landing time
-        round_index = bisect_right(self.round_end_times, landing_time)
-        if round_index < len(self.round_end_times):
-            return self.round_end_times[round_index]
-        # the final replay boundary is the last possible cutoff
-        return self.duration
 
     # convert unfinished flights into events for the next replay
     def get_carried_projectile_events(self):
@@ -158,6 +156,29 @@ class ReplaySystem:
                 }
             )
         return carried_events
+
+    # convert active areas into events with their elapsed lifetime restored
+    def get_carried_area_events(self):
+        return [
+            {
+                "position": tuple(area.position),
+                "owner": area.owner,
+                "start_time": -area.elapsed,
+            }
+            for area in self.active_areas
+            if area.alive
+        ]
+
+    # preserve cooldown time and contact state across replay cutoffs
+    def get_carried_area_damage_state(self):
+        return {
+            "cooldowns": {
+                player_number: max(0.0, next_damage_time - self.last_time)
+                for player_number, next_damage_time
+                in self.area_damage_cooldowns.items()
+            },
+            "touching": self.players_touching_area.copy(),
+        }
 
     # draw active projectiles
     def draw_projectiles(self, screen):

@@ -5,6 +5,11 @@ import record
 import replay
 
 
+GAME_WIDTH = 1280
+GAME_HEIGHT = 720
+GAME_SIZE = (GAME_WIDTH, GAME_HEIGHT)
+
+
 # game class
 class Game:
     # ----setup----
@@ -12,9 +17,11 @@ class Game:
         # management variables
         self.fps = fps
         self.show_hitboxes = False
+        # fixed rectangle containing all gameplay coordinates
+        self.game_area = pygame.Rect(0, 0, GAME_WIDTH, GAME_HEIGHT)
 
         # player variables/properties
-        self.player1_speed = 1
+        self.player1_speed = 2
         self.player2_speed = 1
 
         # recording and replay system
@@ -36,6 +43,10 @@ class Game:
         self.carried_projectile_events = []
         # objects draw the same frozen position between replays
         self.paused_projectiles = []
+        # active areas and damage timing also carry between rounds
+        self.carried_area_events = []
+        self.carried_area_damage_state = None
+        self.paused_areas = []
 
         # player 1 state before recording
         self.player1_original_state = None
@@ -48,6 +59,58 @@ class Game:
         self.winner_font = None
 
     # ----helper----
+
+    # fit the gameplay rectangle inside any window without stretching it
+    def get_game_viewport(self, window_size):
+        window_width = max(1, round(window_size[0]))
+        window_height = max(1, round(window_size[1]))
+        scale = min(
+            window_width / self.game_area.width,
+            window_height / self.game_area.height,
+        )
+        viewport_width = max(1, round(self.game_area.width * scale))
+        viewport_height = max(1, round(self.game_area.height * scale))
+        return pygame.Rect(
+            (window_width - viewport_width) // 2,
+            (window_height - viewport_height) // 2,
+            viewport_width,
+            viewport_height,
+        )
+
+    # convert a window click into the fixed gameplay coordinates
+    def window_to_game(self, position, window_size):
+        viewport = self.get_game_viewport(window_size)
+        if not viewport.collidepoint(position):
+            return None
+
+        game_x = (
+            (position[0] - viewport.left)
+            * self.game_area.width
+            / viewport.width
+        )
+        game_y = (
+            (position[1] - viewport.top)
+            * self.game_area.height
+            / viewport.height
+        )
+        return (
+            min(self.game_area.right - 1, max(self.game_area.left, game_x)),
+            min(self.game_area.bottom - 1, max(self.game_area.top, game_y)),
+        )
+
+    # scale the gameplay canvas and leave unused window space black
+    def draw_game_to_window(self, window, game_surface):
+        viewport = self.get_game_viewport(window.get_size())
+        window.fill((0, 0, 0))
+
+        if viewport.size == game_surface.get_size():
+            scaled_game = game_surface
+        else:
+            scaled_game = pygame.transform.smoothscale(
+                game_surface,
+                viewport.size,
+            )
+        window.blit(scaled_game, viewport)
 
     # draw player function
     def draw_players(self, screen, player1, player2):
@@ -94,6 +157,10 @@ class Game:
         player2,
         live_projectile_owner=None,
     ):
+        # carried areas stay visible but do not update outside replay
+        for area in self.paused_areas:
+            area.draw(screen)
+
         self.draw_players(screen, player1, player2)
 
         # only show new throws belonging to the player taking this turn
@@ -108,7 +175,8 @@ class Game:
     # draw a health bar above a player
     def draw_health_bar(self, screen, player_obj):
         bar_x = round(player_obj.x)
-        bar_y = round(player_obj.y - 14)
+        # taller sprites still keep the bar above their visible image
+        bar_y = player_obj.get_sprite_position()[1] - 14
         bar_width = player_obj.width
         health_width = round(bar_width * player_obj.hp / player_obj.MAX_HP)
         pygame.draw.rect(screen, (45, 45, 45), (bar_x, bar_y, bar_width, 8))
@@ -166,7 +234,7 @@ class Game:
         player_obj.y_vel += player_movements[0] * speed * dt * self.fps
 
         # update player object
-        player_obj.update(dt)
+        player_obj.update(dt, self.game_area)
         # update player timeline
         self.recording_system.record(player_obj, player_number)
 
@@ -187,10 +255,13 @@ class Game:
         self.match_replay_system = None
         self.match_recording = True
         self.match_recording_time = 0
-        # clear old boundaries and carried flights for a new match
+        # clear old boundaries and carried effects for a new match
         self.match_round_end_times = []
         self.carried_projectile_events = []
         self.paused_projectiles = []
+        self.carried_area_events = []
+        self.carried_area_damage_state = None
+        self.paused_areas = []
         self.dead_player_number = None
         self.winner_player_number = None
 
@@ -223,13 +294,13 @@ class Game:
             self.match_recording_system.projectile_events.append(match_event)
 
         self.match_recording_time += round_duration
-        # areas stop at this boundary while midair potions continue
+        # effects continue through this boundary in the full replay
         self.match_round_end_times.append(self.match_recording_time)
 
     # stop recording and prepare the full match replay
     def finish_match_recording(self):
         self.match_recording = False
-        # full replay uses every boundary to preserve cross-round flights
+        # keep round boundaries as full match timeline metadata
         self.match_replay_system = replay.ReplaySystem(
             self.match_recording_system.player1_positions,
             self.match_recording_system.player2_positions,
@@ -326,13 +397,16 @@ class Game:
             self.recording_system.player1_positions,
             self.recording_system.player2_positions,
             replay_events,
+            area_events=self.carried_area_events,
+            area_damage_state=self.carried_area_damage_state,
         )
-        # carried projectiles are now controlled by the replay system
+        # carried effects are now controlled by the replay system
         self.paused_projectiles = []
+        self.paused_areas = []
         # initialize replay_system
         self.replay_system.restart()
 
-    # save unfinished projectiles for the next round
+    # save unfinished projectiles and areas for the next round
     def carry_projectiles(self):
         # save data needed to rebuild each potion in the next replay
         self.carried_projectile_events = (
@@ -344,6 +418,15 @@ class Game:
             for throw_time, owner, potion_obj
             in self.replay_system.active_projectiles
         ]
+        # save remaining area lifetime and shared damage timing
+        self.carried_area_events = (
+            self.replay_system.get_carried_area_events()
+        )
+        self.carried_area_damage_state = (
+            self.replay_system.get_carried_area_damage_state()
+        )
+        # keep areas visible while every replay-only effect is frozen
+        self.paused_areas = list(self.replay_system.active_areas)
 
     # replay phase
     def replay(self, screen, player1, player2):

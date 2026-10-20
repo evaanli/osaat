@@ -127,7 +127,7 @@ class PotionArea:
         self.owner = owner
         # replay time when the potion broke
         self.start_time = start_time
-        # stop at two seconds or at the replay cutoff
+        # stop after two seconds unless an earlier limit is requested
         self.end_time = min(
             start_time + self.DURATION,
             end_time if end_time is not None else start_time + self.DURATION,
