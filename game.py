@@ -1,6 +1,7 @@
 import pygame
 import player
 import gameplay
+import menu
 import projectile
 import sys
 from pathlib import Path
@@ -12,9 +13,6 @@ screen = pygame.display.set_mode(gameplay.GAME_SIZE, pygame.RESIZABLE)
 pygame.display.set_caption("OSAAT")
 # gameplay always draws at this resolution before window scaling
 game_surface = pygame.Surface(gameplay.GAME_SIZE).convert()
-# avoid decoding the large potion png files on the first throw
-projectile.Potion.preload_assets()
-projectile.CannonBall.preload_assets()
 
 # fps config
 clock = pygame.time.Clock()
@@ -54,41 +52,70 @@ MR_DONALD_SPRITE_CENTERS = {
 # fifty hp lets the tank survive nine potion hits
 MR_DONALD_MAX_HP = 50
 
-# initialize player 1
-player1 = player.Player(
-    DORY_SPRITES,
-    sprite_frame_time_ms=DORY_FRAME_TIME_MS,
-    sprite_size=DORY_SIZE,
-    hitbox_size=DORY_HITBOX_SIZE,
-    sprite_centers=DORY_SPRITE_CENTERS,
-    projectile_cooldown=DORY_POTION_COOLDOWN,
-)
-# spawn dory in the left middle walkway
-player1.x = 300
-player1.y = 260
-player1.color = RED
 
-# initialize player 2
-player2 = player.Player(
-    MR_DONALD_SPRITES,
-    sprite_frame_time_ms=MR_DONALD_FRAME_TIME_MS,
-    sprite_size=MR_DONALD_SIZE,
-    hitbox_size=MR_DONALD_HITBOX_SIZE,
-    hitbox_offset=MR_DONALD_HITBOX_OFFSET,
-    sprite_centers=MR_DONALD_SPRITE_CENTERS,
-    max_hp=MR_DONALD_MAX_HP,
-    direction_follows_mouse=True,
-    projectile_type="cannon",
-)
-# spawn mr donald in the right middle walkway
-player2.x = 1050
-player2.y = 240
-player2.color = BLUE
+# build a fighter from the character selected for either player slot
+def create_character(character_name, player_number):
+    if character_name == "mr donald":
+        player_obj = player.Player(
+            MR_DONALD_SPRITES,
+            sprite_frame_time_ms=MR_DONALD_FRAME_TIME_MS,
+            sprite_size=MR_DONALD_SIZE,
+            hitbox_size=MR_DONALD_HITBOX_SIZE,
+            hitbox_offset=MR_DONALD_HITBOX_OFFSET,
+            sprite_centers=MR_DONALD_SPRITE_CENTERS,
+            max_hp=MR_DONALD_MAX_HP,
+            direction_follows_mouse=True,
+            projectile_type="cannon",
+        )
+        player_obj.move_speed = 1
+    else:
+        player_obj = player.Player(
+            DORY_SPRITES,
+            sprite_frame_time_ms=DORY_FRAME_TIME_MS,
+            sprite_size=DORY_SIZE,
+            hitbox_size=DORY_HITBOX_SIZE,
+            sprite_centers=DORY_SPRITE_CENTERS,
+            projectile_cooldown=DORY_POTION_COOLDOWN,
+        )
+        player_obj.move_speed = 2
+
+    player_obj.character_name = character_name
+    if player_number == 1:
+        player_obj.x = 300
+        player_obj.y = 260
+        player_obj.color = RED
+    else:
+        player_obj.x = 1050
+        player_obj.y = 240
+        player_obj.color = BLUE
+    return player_obj
+
+
+# show a frame before decoding the larger game and menu artwork
+def draw_loading_screen():
+    screen.fill((18, 24, 38))
+    loading_font = pygame.font.Font(None, 56)
+    loading_text = loading_font.render("loading...", True, WHITE)
+    screen.blit(
+        loading_text,
+        loading_text.get_rect(center=screen.get_rect().center),
+    )
+    pygame.display.flip()
+    pygame.event.pump()
+
+
+draw_loading_screen()
+# avoid decoding projectile artwork on the first attack
+projectile.Potion.preload_assets()
+projectile.CannonBall.preload_assets()
+character_menu = menu.CharacterMenu(ASSET_FOLDER)
 
 # game config
 running = True
 game = gameplay.Game(FPS)
-phase = "ready"
+player1 = None
+player2 = None
+phase = "menu"
 pause_start = 0
 recording_time = 5000
 pause_time = 3000
@@ -123,7 +150,7 @@ while running:
                 pygame.RESIZABLE,
             )
         elif event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_h:
+            if event.key == pygame.K_h and phase in GAMEPLAY_PHASES:
                 # show or hide the friendly collision squares
                 game.toggle_hitboxes()
             elif (event.key == pygame.K_SPACE and phase == "ready"):
@@ -138,21 +165,35 @@ while running:
                     game.start_match_replay(player1, player2)
                     phase = "match_replay"
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-            target = game.window_to_game(event.pos, screen.get_size())
-            # clicks in a black letterbox bar do not enter gameplay
-            if target is not None:
-                if phase == "record1":
-                    game.throw_projectile(player1, target, 1)
-                elif phase == "record2":
-                    game.throw_projectile(player2, target, 2)
+            if phase == "menu":
+                if character_menu.handle_click(event.pos):
+                    player1_name, player2_name = character_menu.get_selections()
+                    player1 = create_character(player1_name, 1)
+                    player2 = create_character(player2_name, 2)
+                    game.initialize_match_recording()
+                    game.initialize_recording()
+                    phase = "record1"
+            else:
+                target = game.window_to_game(event.pos, screen.get_size())
+                # clicks in a black letterbox bar do not enter gameplay
+                if target is not None:
+                    if phase == "record1":
+                        game.throw_projectile(player1, target, 1)
+                    elif phase == "record2":
+                        game.throw_projectile(player2, target, 2)
 
-    # convert the mouse for dory's preview and mr donald's horizontal aim
-    mouse_game_position = game.window_to_game(
-        pygame.mouse.get_pos(),
-        screen.get_size(),
-    )
-    if phase == "record2" and mouse_game_position is not None:
-        player2.face_towards_x(mouse_game_position[0])
+    # convert the mouse only while the fixed gameplay canvas is active
+    mouse_game_position = None
+    if phase in GAMEPLAY_PHASES:
+        mouse_game_position = game.window_to_game(
+            pygame.mouse.get_pos(),
+            screen.get_size(),
+        )
+    if mouse_game_position is not None:
+        if phase == "record1" and player1.direction_follows_mouse:
+            player1.face_towards_x(mouse_game_position[0])
+        elif phase == "record2" and player2.direction_follows_mouse:
+            player2.face_towards_x(mouse_game_position[0])
 
     # only throws owned by the player recording this turn can move
     if phase == "record1":
@@ -166,8 +207,12 @@ while running:
     render_surface = game_surface if gameplay_frame else screen
     render_surface.fill(BLACK)
 
+    # character selection uses the full resizable window
+    if phase == "menu":
+        character_menu.draw(render_surface)
+
     # phase ready
-    if phase == "ready":
+    elif phase == "ready":
         game.ready(render_surface, player1, player2)
 
     # recording player 1
@@ -250,13 +295,14 @@ while running:
 
     # do not advance animations during a phase change or frozen phase
     stable_phase = phase if phase == rendered_phase else None
-    game.update_sprites(
-        dt,
-        player1,
-        player2,
-        player1_active=stable_phase in ("record1", "replay", "match_replay"),
-        player2_active=stable_phase in ("record2", "replay", "match_replay"),
-    )
+    if player1 is not None and player2 is not None:
+        game.update_sprites(
+            dt,
+            player1,
+            player2,
+            player1_active=stable_phase in ("record1", "replay", "match_replay"),
+            player2_active=stable_phase in ("record2", "replay", "match_replay"),
+        )
 
     if gameplay_frame:
         game.draw_game_to_window(screen, game_surface)

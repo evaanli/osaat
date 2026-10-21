@@ -298,14 +298,14 @@ class Game:
             for point in points
         ]
 
-        glow_width = 8 * scale
+        border_width = 9 * scale
         line_width = 3 * scale
         pygame.draw.lines(
             high_resolution_preview,
-            (255, 255, 255, 45),
+            (16, 34, 70, 210),
             False,
             scaled_points,
-            glow_width,
+            border_width,
         )
         pygame.draw.lines(
             high_resolution_preview,
@@ -317,9 +317,9 @@ class Game:
         for point in (scaled_points[0], scaled_points[-1]):
             drawing.draw_smooth_circle(
                 high_resolution_preview,
-                (255, 255, 255, 45),
+                (16, 34, 70, 210),
                 point,
-                glow_width / 2,
+                border_width / 2,
             )
             drawing.draw_smooth_circle(
                 high_resolution_preview,
@@ -334,9 +334,9 @@ class Game:
         )
         drawing.draw_smooth_circle(
             high_resolution_preview,
-            (255, 255, 255, 45),
+            (16, 34, 70, 230),
             landing_center,
-            (landing_radius + 4) * scale,
+            (landing_radius + 7) * scale,
         )
         drawing.draw_smooth_circle(
             high_resolution_preview,
@@ -392,10 +392,10 @@ class Game:
 
         pygame.draw.line(
             high_resolution_preview,
-            (255, 255, 255, 45),
+            (16, 34, 70, 210),
             start,
             end,
-            8 * scale,
+            9 * scale,
         )
         pygame.draw.line(
             high_resolution_preview,
@@ -420,10 +420,10 @@ class Game:
         for stroke_start, stroke_end in x_strokes:
             pygame.draw.line(
                 high_resolution_preview,
-                (255, 255, 255, 55),
+                (16, 34, 70, 235),
                 stroke_start,
                 stroke_end,
-                8 * scale,
+                10 * scale,
             )
             pygame.draw.line(
                 high_resolution_preview,
@@ -713,7 +713,14 @@ class Game:
             self.player1_original_sprite_state = player1.get_sprite_state()
 
         # records the player
-        self.record_player(player1, 1, self.player1_speed, dt)
+        aim_x = mouse_position[0] if mouse_position is not None else None
+        self.record_player(
+            player1,
+            1,
+            getattr(player1, "move_speed", self.player1_speed),
+            dt,
+            aim_x,
+        )
         # draw
         throw_preview = (
             (player1, mouse_position)
@@ -758,7 +765,13 @@ class Game:
     ):
         # records second player
         aim_x = mouse_position[0] if mouse_position is not None else None
-        self.record_player(player2, 2, self.player2_speed, dt, aim_x)
+        self.record_player(
+            player2,
+            2,
+            getattr(player2, "move_speed", self.player2_speed),
+            dt,
+            aim_x,
+        )
         throw_preview = (
             (player2, mouse_position)
             if mouse_position is not None
