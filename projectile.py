@@ -232,10 +232,52 @@ class Potion:
     def update(self, dt):
         self.set_elapsed(self.elapsed + max(0.0, dt))
 
+    # calculate a prior flight point without changing projectile state
+    def get_position_at_elapsed(self, elapsed):
+        if elapsed <= self.charge_time or self.flight_time <= 0.0:
+            return self.original.copy()
+        flight_elapsed = min(
+            self.flight_time,
+            elapsed - self.charge_time,
+        )
+        progress = flight_elapsed / self.flight_time
+        ground_position = self.original.lerp(self.target, progress)
+        height = 4.0 * self.arc_height * progress * (1.0 - progress)
+        return pygame.Vector2(
+            ground_position.x,
+            ground_position.y - height,
+        )
+
+    # leave a short fading trail behind fast moving projectiles
+    def draw_trail(self, surface, color):
+        if self.charging or self.elapsed <= self.charge_time:
+            return
+
+        for index in range(5, 0, -1):
+            sample_time = self.elapsed - index * 0.025
+            if sample_time <= self.charge_time:
+                continue
+            trail_position = self.get_position_at_elapsed(sample_time)
+            progress = (6 - index) / 5
+            drawing.draw_smooth_circle(
+                surface,
+                (*color[:3], round(35 + 90 * progress)),
+                trail_position,
+                max(2, round(self.RADIUS * (0.18 + 0.22 * progress))),
+            )
+
     # draw the potion
     def draw(self, surface):
         if not self.alive:
             return
+
+        if self.visual_variant is None:
+            trail_color = self.COLOR
+        else:
+            trail_color = self.VARIANT_COLORS[
+                self.visual_variant % len(self.VARIANT_COLORS)
+            ]
+        self.draw_trail(surface, trail_color)
 
         variants = self.get_sprite_variants()
         if self.visual_variant is None or not variants:
@@ -324,6 +366,7 @@ class CannonBall(Potion):
         if not self.alive:
             return
 
+        self.draw_trail(surface, self.COLOR)
         center = round(self.position.x), round(self.position.y)
         image = self.get_sprite_image()
         if image is None:

@@ -2,6 +2,7 @@ from pathlib import Path
 
 import controls
 import drawing
+import effects
 import math
 import projectile
 import pygame
@@ -28,6 +29,9 @@ class Game:
         self.show_hitboxes = False
         # fixed rectangle containing all gameplay coordinates
         self.game_area = pygame.Rect(0, 0, GAME_WIDTH, GAME_HEIGHT)
+        self.battle_surface = pygame.Surface(GAME_SIZE)
+        self.battle_effects = effects.BattleEffects()
+        self.audio_events = []
         self.walls = [
             # the background already contains the visible obstacle artwork
             walls.Wall(rectangle, visible=False)
@@ -75,9 +79,12 @@ class Game:
 
         # death animation variables
         self.dead_player_number = None
+        self.pending_dead_player_number = None
         self.winner_player_number = None
+        self.finisher_hold_until = 0
         self.death_animation_elapsed = 0.0
         self.winner_font = None
+        self.turn_timer_font = None
 
     # ----helper----
 
@@ -230,6 +237,14 @@ class Game:
         # carried projectiles are public results from the last replay
         for potion_obj in self.paused_projectiles:
             potion_obj.draw(screen)
+
+    # save the last public round state for private handoff backgrounds
+    def capture_round_reference(self, player1, player2):
+        reference = pygame.Surface(GAME_SIZE)
+        self.draw_scene(reference, player1, player2)
+        self.draw_health_bar(reference, player1)
+        self.draw_health_bar(reference, player2)
+        return reference
 
     # choose the aiming guide that matches the player's projectile
     def draw_projectile_preview(self, screen, player_obj, mouse_position):
@@ -440,14 +455,116 @@ class Game:
         screen.blit(preview, (left, top))
 
     # draw a health bar above a player
-    def draw_health_bar(self, screen, player_obj):
+    def draw_health_bar(self, screen, player_obj, player_number=None):
         bar_x = round(player_obj.x)
         # taller sprites still keep the bar above their visible image
         bar_y = player_obj.get_sprite_position()[1] - 14
         bar_width = player_obj.width
+        if player_number is None:
+            ghost_health = player_obj.hp
+        else:
+            ghost_health = self.battle_effects.get_ghost_health(
+                player_number,
+                player_obj,
+            )
+        ghost_width = round(
+            bar_width * ghost_health / player_obj.max_hp
+        )
         health_width = round(bar_width * player_obj.hp / player_obj.max_hp)
         pygame.draw.rect(screen, (45, 45, 45), (bar_x, bar_y, bar_width, 8))
+        pygame.draw.rect(
+            screen,
+            (235, 72, 58),
+            (bar_x, bar_y, ghost_width, 8),
+        )
         pygame.draw.rect(screen, (50, 210, 80), (bar_x, bar_y, health_width, 8))
+
+    # show the active player how much of the turn remains as a draining circle
+    def draw_turn_timer(self, screen, recording_time):
+        if self.turn_timer_font is None:
+            self.turn_timer_font = pygame.font.SysFont(
+                "freesansbold",
+                34,
+                bold=True,
+            )
+
+        elapsed = self.recording_system.timer_system.get_timestamp()
+        remaining = max(0.0, recording_time / 1000.0 - elapsed)
+        remaining_fraction = min(1.0, remaining / (recording_time / 1000.0))
+        urgent = remaining <= 1.5
+        timer_color = (255, 83, 68) if urgent else (120, 225, 255)
+        scale = 3
+        timer_size = 112
+        center = timer_size // 2
+        high_resolution_timer = pygame.Surface(
+            (timer_size * scale, timer_size * scale),
+            pygame.SRCALPHA,
+        )
+        scaled_center = center * scale, center * scale
+        drawing.draw_smooth_circle(
+            high_resolution_timer,
+            (*timer_color, 255),
+            scaled_center,
+            50 * scale,
+        )
+        drawing.draw_smooth_circle(
+            high_resolution_timer,
+            (8, 18, 42, 245),
+            scaled_center,
+            45 * scale,
+        )
+
+        # the coloured pie slice shrinks continuously from a full turn
+        if remaining_fraction > 0.0:
+            end_angle = -math.pi / 2 + math.tau * remaining_fraction
+            segment_count = max(2, math.ceil(64 * remaining_fraction))
+            pie_points = [scaled_center]
+            for segment in range(segment_count + 1):
+                angle = -math.pi / 2 + (
+                    end_angle + math.pi / 2
+                ) * segment / segment_count
+                pie_points.append(
+                    (
+                        round(scaled_center[0] + math.cos(angle) * 42 * scale),
+                        round(scaled_center[1] + math.sin(angle) * 42 * scale),
+                    )
+                )
+            pygame.draw.polygon(
+                high_resolution_timer,
+                (*timer_color, 235),
+                pie_points,
+            )
+
+        # the dark center keeps the seconds readable over every pie angle
+        drawing.draw_smooth_circle(
+            high_resolution_timer,
+            (8, 18, 42, 245),
+            scaled_center,
+            23 * scale,
+        )
+        timer = pygame.transform.smoothscale(
+            high_resolution_timer,
+            (timer_size, timer_size),
+        )
+        value = self.turn_timer_font.render(
+            str(math.ceil(remaining)),
+            True,
+            (255, 255, 255),
+        )
+        shadow = self.turn_timer_font.render(
+            str(math.ceil(remaining)),
+            True,
+            (5, 10, 24),
+        )
+        timer.blit(
+            shadow,
+            shadow.get_rect(center=(center + 2, center + 3)),
+        )
+        timer.blit(value, value.get_rect(center=(center, center)))
+        screen.blit(
+            timer,
+            (screen.get_width() - timer_size - 18, 12),
+        )
 
     # start this player's configured projectile from its firing point
     def throw_projectile(self, player_obj, target, player_number):
@@ -536,6 +653,7 @@ class Game:
                 - max(0.0, dt),
             )
 
+        sound_events = []
         for potion_obj in self.projectiles:
             # only the player currently recording can advance their throws
             if (
@@ -561,22 +679,52 @@ class Game:
                     potion_obj.recording_event["target"] = tuple(
                         potion_obj.target
                     )
+                was_charging = potion_obj.charging
+                was_alive = potion_obj.alive
                 potion_obj.update(dt)
+                if was_charging and not potion_obj.charging:
+                    sound_events.append("cannon_fire")
+                if was_alive and not potion_obj.alive:
+                    sound_events.append(
+                        "cannon_impact"
+                        if potion_obj.type == "cannon"
+                        else "potion_break"
+                    )
         self.projectiles = [
             potion_obj for potion_obj in self.projectiles if potion_obj.alive
         ]
+        return sound_events
+
+    # let the main loop play replay sounds without coupling audio to gameplay
+    def pop_audio_events(self):
+        events = self.audio_events
+        self.audio_events = []
+        return events
 
     # check if a player died during replay
     def update_dead_player(self, player1, player2):
+        pending_dead_player = None
+        pending_winner = None
         if player1.hp <= 0 and player2.hp <= 0:
-            self.dead_player_number = 1
-            self.winner_player_number = 0
+            pending_dead_player = 1
+            pending_winner = 0
         elif player1.hp <= 0:
-            self.dead_player_number = 1
-            self.winner_player_number = 2
+            pending_dead_player = 1
+            pending_winner = 2
         elif player2.hp <= 0:
-            self.dead_player_number = 2
-            self.winner_player_number = 1
+            pending_dead_player = 2
+            pending_winner = 1
+
+        if pending_dead_player is None:
+            return
+
+        # hold on the final impact before switching to the death animation
+        if self.pending_dead_player_number is None:
+            self.pending_dead_player_number = pending_dead_player
+            self.winner_player_number = pending_winner
+            self.finisher_hold_until = pygame.time.get_ticks() + 550
+        elif pygame.time.get_ticks() >= self.finisher_hold_until:
+            self.dead_player_number = self.pending_dead_player_number
 
     # recording function
     def record_player(
@@ -636,7 +784,10 @@ class Game:
         self.paused_areas = []
         self.projectile_cooldowns = {1: 0.0, 2: 0.0}
         self.dead_player_number = None
+        self.pending_dead_player_number = None
         self.winner_player_number = None
+        self.finisher_hold_until = 0
+        self.battle_effects.reset()
 
     # add the merged turn recordings to the full match
     def record_round(self):
@@ -688,7 +839,10 @@ class Game:
         player1.reset_health()
         player2.reset_health()
         self.dead_player_number = None
+        self.pending_dead_player_number = None
         self.winner_player_number = None
+        self.finisher_hold_until = 0
+        self.battle_effects.reset(player1, player2)
         self.match_replay_system.restart()
 
     # record player 1 phase
@@ -734,6 +888,7 @@ class Game:
             live_projectile_owner=1,
             throw_preview=throw_preview,
         )
+        self.draw_turn_timer(screen, recording_time)
         # return if overtime
         return self.recording_system.timer_system.get_timestamp() >= recording_time / 1000
 
@@ -784,6 +939,7 @@ class Game:
             live_projectile_owner=2,
             throw_preview=throw_preview,
         )
+        self.draw_turn_timer(screen, recording_time)
 
         # return if overtime
         return self.recording_system.timer_system.get_timestamp() >= recording_time / 1000
@@ -832,6 +988,7 @@ class Game:
         self.paused_areas = []
         # initialize replay_system
         self.replay_system.restart()
+        self.battle_effects.reset()
 
     # save unfinished projectiles and areas for the next round
     def carry_projectiles(self):
@@ -855,19 +1012,62 @@ class Game:
         # keep areas visible while every replay-only effect is frozen
         self.paused_areas = list(self.replay_system.active_areas)
 
+    # compose replay-only combat effects before applying camera shake
+    def draw_replay_scene(self, screen, replay_system, player1, player2):
+        self.audio_events.extend(replay_system.sound_events)
+        self.audio_events.extend(
+            "player_hit" for event in replay_system.damage_events
+        )
+        self.battle_effects.add_damage_events(
+            replay_system.damage_events,
+            player1,
+            player2,
+            replay_system,
+        )
+        self.battle_effects.update(player1, player2)
+
+        scene = self.battle_surface
+        scene.fill((0, 0, 0))
+        self.draw_background(scene)
+        replay_system.draw_areas(scene)
+        self.draw_walls(scene)
+        self.battle_effects.draw_focus_dim(scene, replay_system)
+        self.draw_players(scene, player1, player2)
+        replay_system.draw_projectiles(scene)
+        self.battle_effects.draw_particles(scene)
+
+        # a one-frame white silhouette makes every registered hit obvious
+        if self.battle_effects.is_flashing(1):
+            self.draw_player_silhouette(scene, player1, (255, 255, 255))
+        if self.battle_effects.is_flashing(2):
+            self.draw_player_silhouette(scene, player2, (255, 255, 255))
+
+        self.battle_effects.draw_damage_numbers(scene)
+        self.draw_health_bar(scene, player1, 1)
+        self.draw_health_bar(scene, player2, 2)
+        self.battle_effects.draw_low_health_vignette(
+            scene,
+            player1,
+            player2,
+        )
+
+        screen.fill((0, 0, 0))
+        screen.blit(scene, self.battle_effects.get_shake_offset())
+
     # replay phase
     def replay(self, screen, player1, player2):
         # play out the replay
         finished = self.replay_system.play_out(player1, player2)
 
-        self.draw_background(screen)
-        self.replay_system.draw_areas(screen)
-        self.draw_walls(screen)
-        self.draw_players(screen, player1, player2)
-        self.replay_system.draw_projectiles(screen)
-        self.draw_health_bar(screen, player1)
-        self.draw_health_bar(screen, player2)
+        self.draw_replay_scene(
+            screen,
+            self.replay_system,
+            player1,
+            player2,
+        )
         self.update_dead_player(player1, player2)
+        if self.pending_dead_player_number is not None:
+            finished = False
 
         if finished and self.dead_player_number is None:
             self.carry_projectiles()
@@ -878,14 +1078,15 @@ class Game:
     # replay the full match
     def replay_match(self, screen, player1, player2):
         finished = self.match_replay_system.play_out(player1, player2)
-        self.draw_background(screen)
-        self.match_replay_system.draw_areas(screen)
-        self.draw_walls(screen)
-        self.draw_players(screen, player1, player2)
-        self.match_replay_system.draw_projectiles(screen)
-        self.draw_health_bar(screen, player1)
-        self.draw_health_bar(screen, player2)
+        self.draw_replay_scene(
+            screen,
+            self.match_replay_system,
+            player1,
+            player2,
+        )
         self.update_dead_player(player1, player2)
+        if self.pending_dead_player_number is not None:
+            finished = False
 
         return finished
 

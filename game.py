@@ -1,4 +1,5 @@
 import pygame
+import audio
 import player
 import gameplay
 import menu
@@ -109,6 +110,9 @@ draw_loading_screen()
 projectile.Potion.preload_assets()
 projectile.CannonBall.preload_assets()
 character_menu = menu.CharacterMenu(ASSET_FOLDER)
+match_transition = menu.MatchTransition(ASSET_FOLDER)
+audio_system = audio.AudioSystem(ASSET_FOLDER)
+audio_system.play_menu_music()
 
 # game config
 running = True
@@ -116,9 +120,18 @@ game = gameplay.Game(FPS)
 player1 = None
 player2 = None
 phase = "menu"
-pause_start = 0
-recording_time = 5000
-pause_time = 3000
+# each private recording turn lasts exactly seven seconds
+recording_time = 7000
+handoff_target = None
+handoff_title = ""
+countdown_target = None
+countdown_start = 0
+countdown_sound_step = -1
+round_reference_surface = None
+times_up_start = 0
+times_up_target = None
+times_up_surface = None
+times_up_duration = 1000
 
 # only match phases use the fixed aspect ratio canvas
 GAMEPLAY_PHASES = {
@@ -132,6 +145,9 @@ GAMEPLAY_PHASES = {
     "match_replay",
     "death",
     "game_over",
+    "handoff",
+    "countdown",
+    "times_up",
 }
 
 # game loop
@@ -162,25 +178,52 @@ while running:
             elif event.key == pygame.K_BACKSPACE and phase in ("death", "game_over"):
                 # replay the saved match from the beginning
                 if game.match_replay_system is not None:
+                    audio_system.play_battle_music()
                     game.start_match_replay(player1, player2)
                     phase = "match_replay"
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             if phase == "menu":
-                if character_menu.handle_click(event.pos):
+                menu_action = character_menu.handle_click(event.pos)
+                if menu_action == "move":
+                    audio_system.play("ui_move")
+                elif menu_action == "start":
+                    audio_system.play("ui_start")
+                    audio_system.play_battle_music()
                     player1_name, player2_name = character_menu.get_selections()
                     player1 = create_character(player1_name, 1)
                     player2 = create_character(player2_name, 2)
                     game.initialize_match_recording()
-                    game.initialize_recording()
-                    phase = "record1"
+                    round_reference_surface = game.capture_round_reference(
+                        player1,
+                        player2,
+                    )
+                    handoff_target = "record1"
+                    handoff_title = "player 1's turn"
+                    phase = "handoff"
+            elif phase == "handoff":
+                target = game.window_to_game(event.pos, screen.get_size())
+                if target is not None and match_transition.start_clicked(target):
+                    audio_system.play("ui_start")
+                    countdown_target = handoff_target
+                    countdown_start = pygame.time.get_ticks()
+                    countdown_sound_step = -1
+                    phase = "countdown"
             else:
                 target = game.window_to_game(event.pos, screen.get_size())
                 # clicks in a black letterbox bar do not enter gameplay
                 if target is not None:
                     if phase == "record1":
-                        game.throw_projectile(player1, target, 1)
+                        thrown = game.throw_projectile(player1, target, 1)
                     elif phase == "record2":
-                        game.throw_projectile(player2, target, 2)
+                        thrown = game.throw_projectile(player2, target, 2)
+                    else:
+                        thrown = None
+                    if thrown is not None:
+                        audio_system.play(
+                            "cannon_charge"
+                            if thrown.type == "cannon"
+                            else "potion_throw"
+                        )
 
     # convert the mouse only while the fixed gameplay canvas is active
     mouse_game_position = None
@@ -197,9 +240,13 @@ while running:
 
     # only throws owned by the player recording this turn can move
     if phase == "record1":
-        game.update_projectiles(dt, 1, player1)
+        live_audio_events = game.update_projectiles(dt, 1, player1)
     elif phase == "record2":
-        game.update_projectiles(dt, 2, player2)
+        live_audio_events = game.update_projectiles(dt, 2, player2)
+    else:
+        live_audio_events = []
+    for sound_name in live_audio_events:
+        audio_system.play(sound_name)
 
     # remember which phase was actually drawn this frame
     rendered_phase = phase
@@ -210,6 +257,58 @@ while running:
     # character selection uses the full resizable window
     if phase == "menu":
         character_menu.draw(render_surface)
+
+    # hide private movement while the device changes hands
+    elif phase == "handoff":
+        match_transition.draw_handoff(
+            render_surface,
+            handoff_title,
+            round_reference_surface,
+        )
+
+    # count down before revealing and advancing the next timeline
+    elif phase == "countdown":
+        countdown_elapsed = (
+            pygame.time.get_ticks() - countdown_start
+        ) / 1000.0
+        countdown_step = min(
+            len(match_transition.COUNTDOWN_LABELS) - 1,
+            int(countdown_elapsed / match_transition.STEP_DURATION),
+        )
+        if countdown_step != countdown_sound_step:
+            audio_system.play("countdown")
+            countdown_sound_step = countdown_step
+        match_transition.draw_countdown(
+            render_surface,
+            countdown_elapsed,
+            round_reference_surface,
+        )
+        if countdown_elapsed >= match_transition.countdown_duration:
+            if countdown_target == "record1":
+                game.initialize_recording()
+            elif countdown_target == "record2":
+                game.start_record2(player1)
+            elif countdown_target == "replay":
+                game.start_replay()
+            phase = countdown_target
+
+    # hold the completed turn for one second before changing hands
+    elif phase == "times_up":
+        times_up_elapsed = (
+            pygame.time.get_ticks() - times_up_start
+        ) / 1000.0
+        match_transition.draw_times_up(
+            render_surface,
+            times_up_elapsed,
+            times_up_surface,
+        )
+        if pygame.time.get_ticks() - times_up_start >= times_up_duration:
+            handoff_target = times_up_target
+            if times_up_target == "record2":
+                handoff_title = "player 2's turn"
+            else:
+                handoff_title = "watch replay"
+            phase = "handoff"
 
     # phase ready
     elif phase == "ready":
@@ -225,16 +324,14 @@ while running:
             recording_time,
             mouse_game_position,
         ): # returns true when done
-            phase = "pause1"
-            pause_start = pygame.time.get_ticks()
+            times_up_start = pygame.time.get_ticks()
+            times_up_target = "record2"
+            times_up_surface = game_surface.copy()
+            phase = "times_up"
 
     # pause between recording
     elif phase == "pause1":
         game.pause1(render_surface, player1, player2)
-        if pygame.time.get_ticks() - pause_start >= pause_time: # pause time in ms
-            # if times up then we start recording
-            game.start_record2(player1)
-            phase = "record2"
 
     # recording player 2
     elif phase == "record2":
@@ -246,40 +343,47 @@ while running:
             recording_time,
             mouse_game_position,
         ): # returns true when done
-            phase = "pause2"
-            pause_start = pygame.time.get_ticks()
+            times_up_start = pygame.time.get_ticks()
+            times_up_target = "replay"
+            times_up_surface = game_surface.copy()
+            phase = "times_up"
 
     # pause after player 2 recording
     elif phase == "pause2":
         game.pause2(render_surface, player1, player2)
 
-        if pygame.time.get_ticks() - pause_start >= pause_time:
-            game.start_replay()
-            phase = "replay" # goes to replay
-
     # replays the two player's recordings
     elif phase == "replay":
         finished = game.replay(render_surface, player1, player2)
+        for sound_name in game.pop_audio_events():
+            audio_system.play(sound_name)
         if game.dead_player_number is not None:
             # save the full match as soon as a player dies
             game.finish_match_recording()
             game.start_death_animation(game.dead_player_number)
+            audio_system.play("knockout")
             phase = "death"
         elif finished:
-            phase = "done"
-            pause_start = pygame.time.get_ticks()
+            round_reference_surface = game.capture_round_reference(
+                player1,
+                player2,
+            )
+            handoff_target = "record1"
+            handoff_title = "player 1's turn"
+            phase = "handoff"
 
     # final render
     elif phase == "done":
         game.done(render_surface, player1, player2)
-        if pygame.time.get_ticks() - pause_start >= pause_time:
-            phase = "ready" # restart the gameplay
 
     # replay the complete saved match
     elif phase == "match_replay":
         finished = game.replay_match(render_surface, player1, player2)
+        for sound_name in game.pop_audio_events():
+            audio_system.play(sound_name)
         if game.dead_player_number is not None:
             game.start_death_animation(game.dead_player_number)
+            audio_system.play("knockout")
             phase = "death"
         elif finished:
             phase = "game_over"
@@ -287,6 +391,8 @@ while running:
     # play the death animation over the black background
     elif phase == "death":
         if game.death_animation(render_surface, dt, player1, player2):
+            audio_system.stop_music()
+            audio_system.play("victory")
             phase = "game_over"
 
     # freeze on black until backspace is pressed

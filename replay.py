@@ -69,6 +69,7 @@ class ReplaySystem:
 
     # reset projectiles, carried areas, and their damage state
     def reset_effects(self):
+        self.sound_events = []
         self.projectile_index = 0
         self.active_projectiles = []
         self.active_areas = []
@@ -99,8 +100,18 @@ class ReplaySystem:
     # initiates the recording clock
     def restart(self):
         self.start_time = perf_counter()
+        self.last_wall_time = self.start_time
+        self.playback_time = 0.0
+        self.hit_stop_remaining = 0.0
         # reset replay effects
         self.reset_effects()
+
+    # pause the replay clock briefly so heavy impacts have visible weight
+    def trigger_hit_stop(self, duration):
+        self.hit_stop_remaining = max(
+            self.hit_stop_remaining,
+            max(0.0, duration),
+        )
 
     # update projectile function
     def update_projectiles(self, current_time, player1, player2):
@@ -136,11 +147,19 @@ class ReplaySystem:
                     potion_obj,
                 )
             )
+            # carried projectiles already played their launch sound last round
+            if potion_obj.replay_elapsed_offset <= 0.0:
+                self.sound_events.append(
+                    "cannon_charge"
+                    if potion_obj.type == "cannon"
+                    else "potion_throw"
+                )
             self.projectile_index += 1
 
         # update projectiles and create areas when they break
         still_active = []
         for throw_time, owner, potion_obj in self.active_projectiles:
+            was_charging = potion_obj.charging
             # add saved progress before advancing through the new round
             projectile_elapsed = (
                 potion_obj.replay_elapsed_offset
@@ -168,10 +187,17 @@ class ReplaySystem:
                     new_original
                 )
             potion_obj.set_elapsed(projectile_elapsed)
+            if was_charging and not potion_obj.charging:
+                self.sound_events.append("cannon_fire")
             if potion_obj.alive:
                 # keep unfinished flights so game can save them at replay end
                 still_active.append((throw_time, owner, potion_obj))
             else:
+                self.sound_events.append(
+                    "cannon_impact"
+                    if potion_obj.type == "cannon"
+                    else "potion_break"
+                )
                 landing_time = (
                     throw_time
                     + potion_obj.travel_time
@@ -249,19 +275,62 @@ class ReplaySystem:
             potion_obj.draw(screen)
 
     # damage player immediately and then apply the cooldown
-    def apply_area_damage(self, player_obj, player_number, touching, current_time):
+    def record_damage(
+        self,
+        player_obj,
+        player_number,
+        damage,
+        position,
+        source,
+    ):
+        health_before = player_obj.hp
+        player_obj.take_damage(damage)
+        damage_dealt = health_before - player_obj.hp
+        if damage_dealt > 0:
+            self.damage_events.append(
+                {
+                    "player_number": player_number,
+                    "damage": damage_dealt,
+                    "position": tuple(position),
+                    "source": source,
+                    "health_before": health_before,
+                    "health_after": player_obj.hp,
+                }
+            )
+
+    # damage player immediately and then apply the cooldown
+    def apply_area_damage(
+        self,
+        player_obj,
+        player_number,
+        touching_position,
+        current_time,
+    ):
         # retrieve the previous touch state and next allowed hit time
         was_touching = self.players_touching_area[player_number]
         next_damage_time = self.area_damage_cooldowns[player_number]
+        touching = touching_position is not None
 
         # first contact deals damage immediately when cooldown is ready
         if touching and not was_touching and current_time >= next_damage_time:
-            player_obj.take_damage(projectile.PotionArea.DAMAGE)
+            self.record_damage(
+                player_obj,
+                player_number,
+                projectile.PotionArea.DAMAGE,
+                touching_position,
+                "potion",
+            )
             next_damage_time = current_time + projectile.PotionArea.DAMAGE_INTERVAL
         # continued contact deals another hit every 0.75 seconds
         elif touching and was_touching:
             while current_time >= next_damage_time and player_obj.hp > 0:
-                player_obj.take_damage(projectile.PotionArea.DAMAGE)
+                self.record_damage(
+                    player_obj,
+                    player_number,
+                    projectile.PotionArea.DAMAGE,
+                    touching_position,
+                    "potion",
+                )
                 next_damage_time += projectile.PotionArea.DAMAGE_INTERVAL
 
         # save damage state for the next replay frame
@@ -272,7 +341,7 @@ class ReplaySystem:
     def update_areas(self, current_time, player1, player2):
         still_active = []
         # one value per player prevents overlapping areas from stacking
-        touching_area = {1: False, 2: False}
+        touching_area = {1: None, 2: None}
 
         for area in self.active_areas:
             # update lifetime and remove expired areas
@@ -285,7 +354,13 @@ class ReplaySystem:
                 if not area.damage_applied:
                     damage = area.get_damage(opponent)
                     if damage > 0:
-                        opponent.take_damage(damage)
+                        self.record_damage(
+                            opponent,
+                            opponent_number,
+                            damage,
+                            area.position,
+                            "cannon",
+                        )
                     area.damage_applied = True
                 if area.alive:
                     still_active.append(area)
@@ -294,7 +369,7 @@ class ReplaySystem:
             if area.alive:
                 # check the opponent of the player who threw the potion
                 if area.contains_player(opponent):
-                    touching_area[opponent_number] = True
+                    touching_area[opponent_number] = area.position
                 still_active.append(area)
 
         self.active_areas = still_active
@@ -357,11 +432,22 @@ class ReplaySystem:
 
     # gameplay function for replay
     def play_out(self, player1, player2, current_time=None):
+        self.damage_events = []
+        self.sound_events = []
         # if it isn't declared then initiate
         if current_time is None:
             if self.start_time is None:
                 self.restart()
-            current_time = perf_counter() - self.start_time
+            now = perf_counter()
+            frame_time = max(0.0, now - self.last_wall_time)
+            self.last_wall_time = now
+            frozen_time = min(frame_time, self.hit_stop_remaining)
+            self.hit_stop_remaining = max(
+                0.0,
+                self.hit_stop_remaining - frame_time,
+            )
+            self.playback_time += frame_time - frozen_time
+            current_time = self.playback_time
 
         # prevent it from going below 0
         current_time = max(0.0, current_time)
