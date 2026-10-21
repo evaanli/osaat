@@ -10,6 +10,12 @@ import drawing
 POTION_SPRITE_FOLDER = (
     Path(__file__).resolve().parent / "assets" / "dory_to" / "potions"
 )
+BURGER_SPRITE_FOLDER = (
+    Path(__file__).resolve().parent
+    / "assets"
+    / "mr_donald"
+    / "hamburger_projectile"
+)
 
 
 # potion projectiles
@@ -267,55 +273,92 @@ class CannonBall(Potion):
     MAX_ARC_HEIGHT = 0.0
     MAX_DISTANCE = None
     USES_POTION_SPRITE = False
+    SPRITE_MAX_SIZE = RADIUS * 2
+    _sprite_image = None
+
+    # prepare the large burger source before mr donald can fire
+    @classmethod
+    def preload_assets(cls):
+        cls.get_sprite_image()
+
+    # load, crop, and resize mr donald's burger only once
+    @classmethod
+    def get_sprite_image(cls):
+        if cls._sprite_image is not None:
+            return cls._sprite_image
+
+        frame_path = BURGER_SPRITE_FOLDER / "0.png"
+        if not frame_path.is_file():
+            return None
+
+        image = pygame.image.load(str(frame_path))
+        if pygame.display.get_surface() is not None:
+            image = image.convert_alpha()
+        else:
+            image = image.copy()
+
+        visible_rect = image.get_bounding_rect(min_alpha=16)
+        if visible_rect.width == 0 or visible_rect.height == 0:
+            return None
+
+        image = image.subsurface(visible_rect).copy()
+        scale = min(
+            cls.SPRITE_MAX_SIZE / image.get_width(),
+            cls.SPRITE_MAX_SIZE / image.get_height(),
+        )
+        sprite_size = (
+            max(1, round(image.get_width() * scale)),
+            max(1, round(image.get_height() * scale)),
+        )
+        cls._sprite_image = pygame.transform.smoothscale(
+            image,
+            sprite_size,
+        )
+        return cls._sprite_image
 
     def __init__(self, original, target, owner=None):
         super().__init__(original, target, "cannon", owner)
 
-    # draw a growing square charge before drawing the fired square
+    # draw the burger growing during charge and full size after release
     def draw(self, surface):
         if not self.alive:
             return
 
         center = round(self.position.x), round(self.position.y)
-        if self.charging:
-            charge_progress = min(1.0, self.elapsed / self.charge_time)
-            charge_radius = max(
-                4,
-                round(self.RADIUS * (0.35 + charge_progress * 0.65)),
-            )
-            charge_rect = pygame.Rect(
+        image = self.get_sprite_image()
+        if image is None:
+            projectile_rect = pygame.Rect(
                 0,
                 0,
-                charge_radius * 2,
-                charge_radius * 2,
+                self.RADIUS * 2,
+                self.RADIUS * 2,
             )
-            charge_rect.center = center
-            pygame.draw.rect(surface, self.COLOR, charge_rect, 3)
-            inner_rect = pygame.Rect(0, 0, charge_radius, charge_radius)
-            inner_rect.center = center
+            projectile_rect.center = center
+            pygame.draw.rect(surface, self.OUTLINE_COLOR, projectile_rect)
             pygame.draw.rect(
                 surface,
-                (255, 220, 120),
-                inner_rect,
+                self.COLOR,
+                projectile_rect.inflate(-8, -8),
             )
             return
 
-        projectile_rect = pygame.Rect(
-            0,
-            0,
-            self.RADIUS * 2,
-            self.RADIUS * 2,
-        )
-        projectile_rect.center = center
-        pygame.draw.rect(surface, self.OUTLINE_COLOR, projectile_rect)
-        pygame.draw.rect(surface, self.COLOR, projectile_rect.inflate(-8, -8))
-        shine_rect = pygame.Rect(0, 0, 8, 8)
-        shine_rect.center = center[0] - 7, center[1] - 7
-        pygame.draw.rect(
-            surface,
-            (255, 220, 120),
-            shine_rect,
-        )
+        if self.target.x < self.original.x:
+            image = pygame.transform.flip(image, True, False)
+
+        if self.charging:
+            charge_progress = min(1.0, self.elapsed / self.charge_time)
+            charge_scale = 0.35 + charge_progress * 0.65
+            charge_size = (
+                max(1, round(image.get_width() * charge_scale)),
+                max(1, round(image.get_height() * charge_scale)),
+            )
+            image = pygame.transform.smoothscale(
+                image,
+                charge_size,
+            )
+
+        draw_rect = image.get_rect(center=center)
+        surface.blit(image, draw_rect)
 
 
 # build the correct projectile class from recorded type data

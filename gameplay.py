@@ -5,6 +5,7 @@ import projectile
 import pygame
 import record
 import replay
+import walls
 
 
 GAME_WIDTH = 1280
@@ -21,6 +22,10 @@ class Game:
         self.show_hitboxes = False
         # fixed rectangle containing all gameplay coordinates
         self.game_area = pygame.Rect(0, 0, GAME_WIDTH, GAME_HEIGHT)
+        self.walls = [
+            walls.Wall(rectangle)
+            for rectangle in walls.DEFAULT_WALL_RECTS
+        ]
 
         # player variables/properties
         self.player1_speed = 2
@@ -154,6 +159,31 @@ class Game:
     def toggle_hitboxes(self):
         self.show_hitboxes = not self.show_hitboxes
 
+    # draw every static wall in the gameplay area
+    def draw_walls(self, screen):
+        for wall_obj in self.walls:
+            wall_obj.draw(screen)
+
+    # clamp range first and then stop at the nearest blocking wall
+    def get_projectile_target(self, projectile_type, original, target):
+        projectile_class = (
+            projectile.CannonBall
+            if projectile_type == "cannon"
+            else projectile.Potion
+        )
+        limited_target = projectile_class.get_limited_target(original, target)
+        clearance = (
+            projectile.CannonBall.RADIUS
+            if projectile_type == "cannon"
+            else 0
+        )
+        return walls.get_blocked_target(
+            original,
+            limited_target,
+            self.walls,
+            clearance,
+        )
+
     def draw_scene(
         self,
         screen,
@@ -165,6 +195,8 @@ class Game:
         # carried areas stay visible but do not update outside replay
         for area in self.paused_areas:
             area.draw(screen)
+
+        self.draw_walls(screen)
 
         if throw_preview is not None:
             player_obj, mouse_position = throw_preview
@@ -187,7 +219,8 @@ class Game:
             return
 
         original = pygame.Vector2(player_obj.get_projectile_origin())
-        target = projectile.Potion.get_limited_target(
+        target = self.get_projectile_target(
+            player_obj.projectile_type,
             original,
             mouse_position,
         )
@@ -317,11 +350,9 @@ class Game:
             return None
 
         # only one cannonball can charge at a time for this player
-        if projectile_type == "cannon" and any(
-            projectile_obj.owner == player_number
-            and projectile_obj.type == "cannon"
-            and projectile_obj.charging
-            for projectile_obj in self.projectiles
+        if (
+            projectile_type == "cannon"
+            and self.is_player_charging(player_number)
         ):
             return None
 
@@ -329,12 +360,18 @@ class Game:
             player_obj.face_towards_x(target[0])
 
         original = player_obj.get_projectile_origin()
-        projectile_obj = projectile.create_projectile(
+        blocked_target = self.get_projectile_target(
             projectile_type,
             original,
             target,
+        )
+        projectile_obj = projectile.create_projectile(
+            projectile_type,
+            original,
+            blocked_target,
             player_number,
         )
+        projectile_obj.aim_target = pygame.Vector2(target)
 
         if projectile_obj.alive:
             self.projectiles.append(projectile_obj)
@@ -345,6 +382,7 @@ class Game:
             player_number,
             projectile_obj.type,
             projectile_obj.visual_variant,
+            projectile_obj.aim_target,
         )
         self.projectile_cooldowns[player_number] = (
             player_obj.projectile_cooldown
@@ -354,6 +392,27 @@ class Game:
     # keep the old method name for potion callers
     def throw_potion(self, player_obj, target, player_number):
         return self.throw_projectile(player_obj, target, player_number)
+
+    # check live and carried cannon charges for the active recording turn
+    def is_player_charging(self, player_number):
+        if any(
+            projectile_obj.owner == player_number
+            and projectile_obj.type == "cannon"
+            and projectile_obj.charging
+            for projectile_obj in self.projectiles
+        ):
+            return True
+
+        recording_time = self.recording_system.timer_system.get_timestamp()
+        for event in self.carried_projectile_events:
+            if (
+                event["player_number"] == player_number
+                and event["potion_type"] == "cannon"
+                and event.get("elapsed", 0.0) + recording_time
+                < projectile.CannonBall.CHARGE_TIME
+            ):
+                return True
+        return False
 
     def update_projectiles(
         self,
@@ -377,11 +436,22 @@ class Game:
             ):
                 # keep a cannon charge attached until its firing frame
                 if potion_obj.charging and active_player is not None:
+                    new_original = active_player.get_projectile_origin()
+                    potion_obj.target.update(
+                        self.get_projectile_target(
+                            potion_obj.type,
+                            new_original,
+                            potion_obj.aim_target,
+                        )
+                    )
                     potion_obj.set_original(
-                        active_player.get_projectile_origin()
+                        new_original
                     )
                     potion_obj.recording_event["original"] = tuple(
                         potion_obj.original
+                    )
+                    potion_obj.recording_event["target"] = tuple(
+                        potion_obj.target
                     )
                 potion_obj.update(dt)
         self.projectiles = [
@@ -409,14 +479,22 @@ class Game:
         dt,
         aim_x=None,
     ):
-        # collects movements from player object
-        player_movements = controls.return_movements()
-        # apply movements from movement vector
-        player_obj.x_vel += player_movements[1] * speed * dt * self.fps # with deltatime
-        player_obj.y_vel += player_movements[0] * speed * dt * self.fps
+        if self.is_player_charging(player_number):
+            # stop existing momentum and ignore movement during cannon charge
+            player_obj.x_vel = 0.0
+            player_obj.y_vel = 0.0
+        else:
+            # collect and apply movement when the player is free to move
+            player_movements = controls.return_movements()
+            player_obj.x_vel += (
+                player_movements[1] * speed * dt * self.fps
+            )
+            player_obj.y_vel += (
+                player_movements[0] * speed * dt * self.fps
+            )
 
         # update player object
-        player_obj.update(dt, self.game_area)
+        player_obj.update(dt, self.game_area, self.walls)
         if player_obj.direction_follows_mouse and aim_x is not None:
             player_obj.face_towards_x(aim_x)
         else:
@@ -493,6 +571,7 @@ class Game:
             self.match_recording_system.player2_positions,
             self.match_recording_system.projectile_events,
             self.match_round_end_times,
+            walls=self.walls,
         )
         self.match_replay_system.restart()
 
@@ -614,6 +693,7 @@ class Game:
             replay_events,
             area_events=self.carried_area_events,
             area_damage_state=self.carried_area_damage_state,
+            walls=self.walls,
         )
         # carried effects are now controlled by the replay system
         self.paused_projectiles = []
@@ -649,6 +729,7 @@ class Game:
         finished = self.replay_system.play_out(player1, player2)
 
         self.replay_system.draw_areas(screen)
+        self.draw_walls(screen)
         self.draw_players(screen, player1, player2)
         self.replay_system.draw_projectiles(screen)
         self.draw_health_bar(screen, player1)
@@ -665,6 +746,7 @@ class Game:
     def replay_match(self, screen, player1, player2):
         finished = self.match_replay_system.play_out(player1, player2)
         self.match_replay_system.draw_areas(screen)
+        self.draw_walls(screen)
         self.draw_players(screen, player1, player2)
         self.match_replay_system.draw_projectiles(screen)
         self.draw_health_bar(screen, player1)

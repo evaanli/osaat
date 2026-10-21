@@ -2,7 +2,9 @@
 from bisect import bisect_right
 from time import perf_counter
 
+import pygame
 import projectile
+import walls
 
 class ReplaySystem:
     def __init__(
@@ -13,6 +15,7 @@ class ReplaySystem:
         round_end_times=None,
         area_events=None,
         area_damage_state=None,
+        walls=None,
     ):
         # format the track
         # player tracks
@@ -32,6 +35,7 @@ class ReplaySystem:
         )
         # round boundaries are metadata because effects continue through them
         self.round_end_times = sorted(round_end_times or [self.duration])
+        self.walls = walls or []
         # carried areas use negative start times to restore elapsed lifetime
         self.area_events = area_events or []
         area_damage_state = area_damage_state or {}
@@ -114,6 +118,9 @@ class ReplaySystem:
                 event["player_number"],
                 event.get("visual_variant"),
             )
+            potion_obj.aim_target = pygame.Vector2(
+                event.get("aim_target", event["target"])
+            )
             # explicit elapsed time preserves partial charges across rounds
             event_time = event["timestamp"]
             potion_obj.replay_elapsed_offset = event.get(
@@ -143,8 +150,22 @@ class ReplaySystem:
             if projectile_elapsed < potion_obj.charge_time:
                 # keep the real launch origin on the nozzle while charging
                 firing_player = player1 if owner == 1 else player2
+                new_original = firing_player.get_projectile_origin()
+                clearance = (
+                    projectile.CannonBall.RADIUS
+                    if potion_obj.type == "cannon"
+                    else 0
+                )
+                potion_obj.target.update(
+                    walls.get_blocked_target(
+                        new_original,
+                        potion_obj.aim_target,
+                        self.walls,
+                        clearance,
+                    )
+                )
                 potion_obj.set_original(
-                    firing_player.get_projectile_origin()
+                    new_original
                 )
             potion_obj.set_elapsed(projectile_elapsed)
             if potion_obj.alive:
@@ -191,6 +212,7 @@ class ReplaySystem:
                     "target": tuple(potion_obj.target),
                     "potion_type": potion_obj.type,
                     "visual_variant": potion_obj.visual_variant,
+                    "aim_target": tuple(potion_obj.aim_target),
                 }
             )
         return carried_events

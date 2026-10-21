@@ -47,6 +47,7 @@ class Player:
         self.animations = {}
         self.current_animation = None
         self.sprite = None
+        self.sprite_hitbox_bottom = None
         if sprite_folder is not None:
             self.load_sprite(sprite_folder, sprite_frame_time_ms)
 
@@ -113,6 +114,17 @@ class Player:
             "idle" if "idle" in self.animations else next(iter(self.animations))
         )
         self.set_animation(first_animation)
+
+        # use one stable foot line so animation changes cannot move the hitbox
+        unique_animations = {
+            id(animation): animation
+            for animation in self.animations.values()
+        }.values()
+        self.sprite_hitbox_bottom = max(
+            opaque_rect.bottom
+            for animation in unique_animations
+            for opaque_rect in animation.opaque_rects
+        )
 
     # change animation and restart only when the state changes
     def set_animation(self, animation_name):
@@ -270,10 +282,9 @@ class Player:
         hitbox_bottom = self.y + self.height
         if self.sprite is not None:
             # ignore transparent padding below sprites such as mr donald's tracks
-            opaque_rect = self.sprite.get_opaque_rect()
-            if opaque_rect.width > 0 and opaque_rect.height > 0:
+            if self.sprite_hitbox_bottom is not None:
                 sprite_y = self.get_sprite_position()[1]
-                hitbox_bottom = sprite_y + opaque_rect.bottom
+                hitbox_bottom = sprite_y + self.sprite_hitbox_bottom
 
         return pygame.Rect(
             round(
@@ -318,12 +329,134 @@ class Player:
         if self.y != old_y:
             self.y_vel = 0
 
-    # update physics and apply the optional gameplay boundary
-    def update(self, dt, game_area=None):
+    # keep the friendly hitbox on its original side of every crossed wall
+    def resolve_wall_collisions(
+        self,
+        wall_objects,
+        axis,
+        movement,
+        previous_hitbox,
+    ):
+        if not wall_objects or movement == 0.0:
+            return
+
+        for wall_obj in wall_objects:
+            wall_rect = wall_obj.rect
+            hitbox = self.get_hitbox()
+
+            if axis == "x":
+                perpendicular_overlap = (
+                    hitbox.top < wall_rect.bottom
+                    and hitbox.bottom > wall_rect.top
+                )
+                if not perpendicular_overlap:
+                    continue
+
+                started_overlapping = previous_hitbox.colliderect(wall_rect)
+                left_penetration = previous_hitbox.right - wall_rect.left
+                right_penetration = wall_rect.right - previous_hitbox.left
+                started_on_left = (
+                    previous_hitbox.right <= wall_rect.left
+                    or (
+                        started_overlapping
+                        and left_penetration <= right_penetration
+                    )
+                )
+                started_on_right = (
+                    previous_hitbox.left >= wall_rect.right
+                    or (started_overlapping and not started_on_left)
+                )
+
+                if (
+                    movement > 0.0
+                    and started_on_left
+                    and hitbox.right > wall_rect.left
+                ):
+                    self.x += wall_rect.left - hitbox.right - 1
+                    self.x_vel = 0.0
+                elif (
+                    movement < 0.0
+                    and started_on_right
+                    and hitbox.left < wall_rect.right
+                ):
+                    self.x += wall_rect.right - hitbox.left + 1
+                    self.x_vel = 0.0
+                elif hitbox.colliderect(wall_rect):
+                    # recover an old overlap without swapping wall sides
+                    if started_on_left:
+                        self.x += wall_rect.left - hitbox.right - 1
+                    else:
+                        self.x += wall_rect.right - hitbox.left + 1
+                    self.x_vel = 0.0
+            else:
+                perpendicular_overlap = (
+                    hitbox.left < wall_rect.right
+                    and hitbox.right > wall_rect.left
+                )
+                if not perpendicular_overlap:
+                    continue
+
+                started_overlapping = previous_hitbox.colliderect(wall_rect)
+                top_penetration = previous_hitbox.bottom - wall_rect.top
+                bottom_penetration = wall_rect.bottom - previous_hitbox.top
+                started_above = (
+                    previous_hitbox.bottom <= wall_rect.top
+                    or (
+                        started_overlapping
+                        and top_penetration <= bottom_penetration
+                    )
+                )
+                started_below = (
+                    previous_hitbox.top >= wall_rect.bottom
+                    or (started_overlapping and not started_above)
+                )
+
+                if (
+                    movement > 0.0
+                    and started_above
+                    and hitbox.bottom > wall_rect.top
+                ):
+                    self.y += wall_rect.top - hitbox.bottom - 1
+                    self.y_vel = 0.0
+                elif (
+                    movement < 0.0
+                    and started_below
+                    and hitbox.top < wall_rect.bottom
+                ):
+                    self.y += wall_rect.bottom - hitbox.top + 1
+                    self.y_vel = 0.0
+                elif hitbox.colliderect(wall_rect):
+                    # recover an old overlap without swapping wall sides
+                    if started_above:
+                        self.y += wall_rect.top - hitbox.bottom - 1
+                    else:
+                        self.y += wall_rect.bottom - hitbox.top + 1
+                    self.y_vel = 0.0
+
+    # update physics and apply optional gameplay and wall boundaries
+    def update(self, dt, game_area=None, wall_objects=None):
         frame_scale = dt * 60
 
-        self.x += self.x_vel * frame_scale
-        self.y += self.y_vel * frame_scale
+        x_movement = self.x_vel * frame_scale
+        y_movement = self.y_vel * frame_scale
+
+        previous_hitbox = self.get_hitbox()
+        self.x += x_movement
+        self.resolve_wall_collisions(
+            wall_objects,
+            "x",
+            x_movement,
+            previous_hitbox,
+        )
+
+        previous_hitbox = self.get_hitbox()
+        self.y += y_movement
+        self.resolve_wall_collisions(
+            wall_objects,
+            "y",
+            y_movement,
+            previous_hitbox,
+        )
 
         self.x_vel *= 0.6 ** frame_scale
         self.y_vel *= 0.6 ** frame_scale

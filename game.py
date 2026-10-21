@@ -14,6 +14,7 @@ pygame.display.set_caption("OSAAT")
 game_surface = pygame.Surface(gameplay.GAME_SIZE).convert()
 # avoid decoding the large potion png files on the first throw
 projectile.Potion.preload_assets()
+projectile.CannonBall.preload_assets()
 
 # fps config
 clock = pygame.time.Clock()
@@ -32,6 +33,12 @@ DORY_SPRITES = ASSET_FOLDER / "dory_to"
 DORY_SIZE = (150, 150)
 DORY_FRAME_TIME_MS = 200
 DORY_POTION_COOLDOWN = 0.33
+# center each pose on its visible artwork instead of transparent padding
+DORY_SPRITE_CENTERS = {
+    "idle": (94.5, 75),
+    "walk_left": (81, 75),
+    "walk_right": (81, 75),
+}
 MR_DONALD_SPRITES = ASSET_FOLDER / "mr_donald"
 MR_DONALD_SIZE = (300, 300)
 MR_DONALD_FRAME_TIME_MS = 100
@@ -50,6 +57,7 @@ player1 = player.Player(
     DORY_SPRITES,
     sprite_frame_time_ms=DORY_FRAME_TIME_MS,
     sprite_size=DORY_SIZE,
+    sprite_centers=DORY_SPRITE_CENTERS,
     projectile_cooldown=DORY_POTION_COOLDOWN,
 )
 player1.x = 400

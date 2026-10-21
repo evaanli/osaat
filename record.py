@@ -54,6 +54,7 @@ class RecordSystem:
         player_number,
         potion_type="harming",
         visual_variant=None,
+        aim_target=None,
     ):
         # add projectile info to the projectile events
         event = {
@@ -64,6 +65,8 @@ class RecordSystem:
             "potion_type": potion_type,
             # replay the same random colour chosen for the live throw
             "visual_variant": visual_variant,
+            # preserve the mouse aim for moving charged projectiles
+            "aim_target": tuple(aim_target if aim_target is not None else target),
         }
         self.projectile_events.append(event)
         # live charging projectiles update this event with their final origin
