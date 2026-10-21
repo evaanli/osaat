@@ -30,24 +30,26 @@ BLUE = (0, 128, 255)
 ASSET_FOLDER = Path(__file__).resolve().parent / "assets"
 
 DORY_SPRITES = ASSET_FOLDER / "dory_to"
-DORY_SIZE = (150, 150)
+# both fighters and their collision shapes use half of their original size
+DORY_SIZE = (75, 75)
+DORY_HITBOX_SIZE = (28, 28)
 DORY_FRAME_TIME_MS = 200
 DORY_POTION_COOLDOWN = 0.33
 # center each pose on its visible artwork instead of transparent padding
 DORY_SPRITE_CENTERS = {
-    "idle": (94.5, 75),
-    "walk_left": (81, 75),
-    "walk_right": (81, 75),
+    "idle": (47.25, 37.5),
+    "walk_left": (40.5, 37.5),
+    "walk_right": (40.5, 37.5),
 }
 MR_DONALD_SPRITES = ASSET_FOLDER / "mr_donald"
-MR_DONALD_SIZE = (300, 300)
+MR_DONALD_SIZE = (150, 150)
 MR_DONALD_FRAME_TIME_MS = 100
-MR_DONALD_HITBOX_SIZE = (200, 56)
-MR_DONALD_HITBOX_OFFSET = (-26, 0)
+MR_DONALD_HITBOX_SIZE = (100, 28)
+MR_DONALD_HITBOX_OFFSET = (-13, 0)
 # center both directions on the middle of the tank tracks
 MR_DONALD_SPRITE_CENTERS = {
-    "left": (192, 195),
-    "right": (118, 195),
+    "left": (96, 97.5),
+    "right": (59, 97.5),
 }
 # fifty hp lets the tank survive nine potion hits
 MR_DONALD_MAX_HP = 50
@@ -57,11 +59,13 @@ player1 = player.Player(
     DORY_SPRITES,
     sprite_frame_time_ms=DORY_FRAME_TIME_MS,
     sprite_size=DORY_SIZE,
+    hitbox_size=DORY_HITBOX_SIZE,
     sprite_centers=DORY_SPRITE_CENTERS,
     projectile_cooldown=DORY_POTION_COOLDOWN,
 )
-player1.x = 400
-player1.y = 300
+# spawn dory in the left middle walkway
+player1.x = 300
+player1.y = 260
 player1.color = RED
 
 # initialize player 2
@@ -76,8 +80,9 @@ player2 = player.Player(
     direction_follows_mouse=True,
     projectile_type="cannon",
 )
-player2.x = 400
-player2.y = 300
+# spawn mr donald in the right middle walkway
+player2.x = 1050
+player2.y = 240
 player2.color = BLUE
 
 # game config

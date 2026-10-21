@@ -75,8 +75,9 @@ class Player:
             for animation_folder in sorted(folder.iterdir()):
                 if (
                     animation_folder.is_dir()
-                    # projectile art lives beside dory's animations
+                    # projectile art can live beside character animations
                     and animation_folder.name != "potions"
+                    and not animation_folder.name.endswith("projectile")
                     and (animation_folder / "0.png").is_file()
                 ):
                     self.animations[animation_folder.name] = sprite.Sprite(
@@ -260,7 +261,12 @@ class Player:
     # get the point where this player's projectile should begin
     def get_projectile_origin(self):
         if self.projectile_type != "cannon" or self.sprite is None:
-            return self.x, self.y
+            # use the visible sprite center until a hand attachment is available
+            if self.sprite is None:
+                return self.get_rect().center
+            sprite_x, sprite_y = self.get_sprite_position()
+            center_x, center_y = self.sprite.get_center()
+            return sprite_x + center_x, sprite_y + center_y
 
         edge_x, edge_y = self.sprite.get_edge_point(self.facing_direction)
         sprite_x, sprite_y = self.get_sprite_position()
@@ -299,34 +305,34 @@ class Player:
 
     # keep the full visible player inside the gameplay rectangle
     def constrain_to(self, game_area):
-        sprite_width = self.sprite.width if self.sprite is not None else self.width
-        sprite_height = self.sprite.height if self.sprite is not None else self.height
-        top_overhang = max(0.0, sprite_height - self.height)
-
-        if self.sprite is None:
-            sprite_left_offset = 0.0
-        else:
-            sprite_center_x, _ = self.sprite.get_center()
-            sprite_left_offset = (
-                self.width / 2
-                + self.hitbox_offset[0]
-                - sprite_center_x
+        # transparent sprite padding should not push a player across the map
+        boundary_rect = self.get_hitbox()
+        if self.sprite is not None:
+            visible_rect = self.sprite.get_opaque_rect().move(
+                self.get_sprite_position()
             )
+            boundary_rect = boundary_rect.union(visible_rect)
+        else:
+            boundary_rect = boundary_rect.union(self.get_rect())
 
-        minimum_x = game_area.left - sprite_left_offset
-        maximum_x = game_area.right - sprite_width - sprite_left_offset
-        minimum_y = game_area.top + top_overhang
-        maximum_y = game_area.bottom - self.height
+        x_correction = 0
+        y_correction = 0
+        if boundary_rect.left < game_area.left:
+            x_correction = game_area.left - boundary_rect.left
+        elif boundary_rect.right > game_area.right:
+            x_correction = game_area.right - boundary_rect.right
+        if boundary_rect.top < game_area.top:
+            y_correction = game_area.top - boundary_rect.top
+        elif boundary_rect.bottom > game_area.bottom:
+            y_correction = game_area.bottom - boundary_rect.bottom
 
-        old_x = self.x
-        old_y = self.y
-        self.x = max(minimum_x, min(self.x, maximum_x))
-        self.y = max(minimum_y, min(self.y, maximum_y))
+        self.x += x_correction
+        self.y += y_correction
 
         # stop velocity on an axis when that boundary is reached
-        if self.x != old_x:
+        if x_correction != 0:
             self.x_vel = 0
-        if self.y != old_y:
+        if y_correction != 0:
             self.y_vel = 0
 
     # keep the friendly hitbox on its original side of every crossed wall

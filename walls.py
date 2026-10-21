@@ -1,13 +1,21 @@
 import pygame
 
 
-# default obstacle layout inside the fixed gameplay area
+# obstacle bounds measured from the 1920 by 1080 match background
+# every source coordinate is scaled to the 1280 by 720 gameplay area
 DEFAULT_WALL_RECTS = (
-    (585, 150, 110, 170),
-    (585, 400, 110, 170),
-    (250, 505, 180, 45),
-    (850, 170, 180, 45),
+    # large kitchen counters and appliances
+    (59, 173, 560, 152),
+    (75, 420, 504, 247),
+    (708, 124, 117, 570),
+    (936, 70, 255, 191),
+    (989, 388, 224, 315),
+    # three round floor obstacles along the top of the map
+    (108, 74, 83, 78),
+    (288, 74, 83, 78),
+    (459, 74, 84, 78),
 )
+WALL_COLLISION_MARGIN = 6
 
 
 class Wall:
@@ -16,12 +24,24 @@ class Wall:
     BORDER_COLOR = (155, 169, 195)
     SHADOW_COLOR = (20, 24, 32)
 
-    def __init__(self, rectangle):
-        self.rect = pygame.Rect(rectangle)
+    def __init__(
+        self,
+        rectangle,
+        visible=True,
+        collision_margin=WALL_COLLISION_MARGIN,
+    ):
+        self.visual_rect = pygame.Rect(rectangle)
+        # inset collision while leaving the background artwork untouched
+        margin = max(0, round(collision_margin))
+        self.rect = self.visual_rect.inflate(-margin * 2, -margin * 2)
+        self.visible = visible
 
     # draw a simple raised wall that stays readable on the dark ground
     def draw(self, surface):
-        shadow = self.rect.move(0, 6)
+        if not self.visible:
+            return
+
+        shadow = self.visual_rect.move(0, 6)
         pygame.draw.rect(
             surface,
             self.SHADOW_COLOR,
@@ -31,10 +51,10 @@ class Wall:
         pygame.draw.rect(
             surface,
             self.BORDER_COLOR,
-            self.rect,
+            self.visual_rect,
             border_radius=8,
         )
-        inner = self.rect.inflate(-6, -6)
+        inner = self.visual_rect.inflate(-6, -6)
         pygame.draw.rect(
             surface,
             self.COLOR,

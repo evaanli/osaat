@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import controls
 import drawing
 import math
@@ -5,12 +7,16 @@ import projectile
 import pygame
 import record
 import replay
+import sprite
 import walls
 
 
 GAME_WIDTH = 1280
 GAME_HEIGHT = 720
 GAME_SIZE = (GAME_WIDTH, GAME_HEIGHT)
+MATCH_BACKGROUND_FOLDER = (
+    Path(__file__).resolve().parent / "assets" / "match_background"
+)
 
 
 # game class
@@ -23,9 +29,15 @@ class Game:
         # fixed rectangle containing all gameplay coordinates
         self.game_area = pygame.Rect(0, 0, GAME_WIDTH, GAME_HEIGHT)
         self.walls = [
-            walls.Wall(rectangle)
+            # the background already contains the visible obstacle artwork
+            walls.Wall(rectangle, visible=False)
             for rectangle in walls.DEFAULT_WALL_RECTS
         ]
+        self.match_background = sprite.Sprite(
+            MATCH_BACKGROUND_FOLDER,
+            frame_time_ms=0,
+            size=GAME_SIZE,
+        )
 
         # player variables/properties
         self.player1_speed = 2
@@ -164,6 +176,10 @@ class Game:
         for wall_obj in self.walls:
             wall_obj.draw(screen)
 
+    # draw the fixed match art below every gameplay object
+    def draw_background(self, screen):
+        self.match_background.draw(screen, (0, 0))
+
     # clamp range first and then stop at the nearest blocking wall
     def get_projectile_target(self, projectile_type, original, target):
         projectile_class = (
@@ -192,6 +208,8 @@ class Game:
         live_projectile_owner=None,
         throw_preview=None,
     ):
+        self.draw_background(screen)
+
         # carried areas stay visible but do not update outside replay
         for area in self.paused_areas:
             area.draw(screen)
@@ -200,7 +218,7 @@ class Game:
 
         if throw_preview is not None:
             player_obj, mouse_position = throw_preview
-            self.draw_potion_preview(screen, player_obj, mouse_position)
+            self.draw_projectile_preview(screen, player_obj, mouse_position)
 
         self.draw_players(screen, player1, player2)
 
@@ -212,6 +230,13 @@ class Game:
         # carried projectiles are public results from the last replay
         for potion_obj in self.paused_projectiles:
             potion_obj.draw(screen)
+
+    # choose the aiming guide that matches the player's projectile
+    def draw_projectile_preview(self, screen, player_obj, mouse_position):
+        if player_obj.projectile_type == "cannon":
+            self.draw_cannon_preview(screen, player_obj, mouse_position)
+        else:
+            self.draw_potion_preview(screen, player_obj, mouse_position)
 
     # draw dory's curved aiming guide and highlighted landing area
     def draw_potion_preview(self, screen, player_obj, mouse_position):
@@ -325,6 +350,89 @@ class Game:
             landing_center,
             (landing_radius - 3) * scale,
         )
+        preview = pygame.transform.smoothscale(
+            high_resolution_preview,
+            preview_size,
+        )
+        screen.blit(preview, (left, top))
+
+    # draw mr donald's straight shot guide with an x at the impact point
+    def draw_cannon_preview(self, screen, player_obj, mouse_position):
+        if mouse_position is None:
+            return
+
+        original = pygame.Vector2(player_obj.get_projectile_origin())
+        target = self.get_projectile_target(
+            player_obj.projectile_type,
+            original,
+            mouse_position,
+        )
+
+        # supersample the line and marker so diagonal aim stays smooth
+        marker_radius = 11
+        margin = 12
+        left = math.floor(min(original.x, target.x) - marker_radius - margin)
+        top = math.floor(min(original.y, target.y) - marker_radius - margin)
+        right = math.ceil(max(original.x, target.x) + marker_radius + margin)
+        bottom = math.ceil(max(original.y, target.y) + marker_radius + margin)
+        preview_size = max(1, right - left), max(1, bottom - top)
+        scale = 3
+        high_resolution_preview = pygame.Surface(
+            (preview_size[0] * scale, preview_size[1] * scale),
+            pygame.SRCALPHA,
+        )
+        start = (
+            round((original.x - left) * scale),
+            round((original.y - top) * scale),
+        )
+        end = (
+            round((target.x - left) * scale),
+            round((target.y - top) * scale),
+        )
+
+        pygame.draw.line(
+            high_resolution_preview,
+            (255, 255, 255, 45),
+            start,
+            end,
+            8 * scale,
+        )
+        pygame.draw.line(
+            high_resolution_preview,
+            (255, 255, 255, 205),
+            start,
+            end,
+            3 * scale,
+        )
+
+        # use two crossed strokes instead of a circular landing marker
+        marker = marker_radius * scale
+        x_strokes = (
+            (
+                (end[0] - marker, end[1] - marker),
+                (end[0] + marker, end[1] + marker),
+            ),
+            (
+                (end[0] - marker, end[1] + marker),
+                (end[0] + marker, end[1] - marker),
+            ),
+        )
+        for stroke_start, stroke_end in x_strokes:
+            pygame.draw.line(
+                high_resolution_preview,
+                (255, 255, 255, 55),
+                stroke_start,
+                stroke_end,
+                8 * scale,
+            )
+            pygame.draw.line(
+                high_resolution_preview,
+                (255, 255, 255, 235),
+                stroke_start,
+                stroke_end,
+                3 * scale,
+            )
+
         preview = pygame.transform.smoothscale(
             high_resolution_preview,
             preview_size,
@@ -651,7 +759,18 @@ class Game:
         # records second player
         aim_x = mouse_position[0] if mouse_position is not None else None
         self.record_player(player2, 2, self.player2_speed, dt, aim_x)
-        self.draw_scene(screen, player1, player2, live_projectile_owner=2)
+        throw_preview = (
+            (player2, mouse_position)
+            if mouse_position is not None
+            else None
+        )
+        self.draw_scene(
+            screen,
+            player1,
+            player2,
+            live_projectile_owner=2,
+            throw_preview=throw_preview,
+        )
 
         # return if overtime
         return self.recording_system.timer_system.get_timestamp() >= recording_time / 1000
@@ -728,6 +847,7 @@ class Game:
         # play out the replay
         finished = self.replay_system.play_out(player1, player2)
 
+        self.draw_background(screen)
         self.replay_system.draw_areas(screen)
         self.draw_walls(screen)
         self.draw_players(screen, player1, player2)
@@ -745,6 +865,7 @@ class Game:
     # replay the full match
     def replay_match(self, screen, player1, player2):
         finished = self.match_replay_system.play_out(player1, player2)
+        self.draw_background(screen)
         self.match_replay_system.draw_areas(screen)
         self.draw_walls(screen)
         self.draw_players(screen, player1, player2)
