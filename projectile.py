@@ -5,6 +5,7 @@ from pathlib import Path
 import pygame
 
 import drawing
+import walls
 
 
 POTION_SPRITE_FOLDER = (
@@ -37,6 +38,10 @@ class Potion:
     # visible bottle size and tumbling speed during flight
     SPRITE_SIZE = (28, 54)
     SPIN_SPEED = 720.0
+    TRAIL_SAMPLES = 5
+    TRAIL_INTERVAL = 0.025
+    TRAIL_MIN_SCALE = 0.18
+    TRAIL_MAX_SCALE = 0.40
     USES_POTION_SPRITE = True
     VARIANT_COLORS = (
         (171, 112, 246),
@@ -253,17 +258,22 @@ class Potion:
         if self.charging or self.elapsed <= self.charge_time:
             return
 
-        for index in range(5, 0, -1):
-            sample_time = self.elapsed - index * 0.025
+        for index in range(self.TRAIL_SAMPLES, 0, -1):
+            sample_time = self.elapsed - index * self.TRAIL_INTERVAL
             if sample_time <= self.charge_time:
                 continue
             trail_position = self.get_position_at_elapsed(sample_time)
-            progress = (6 - index) / 5
+            progress = (
+                self.TRAIL_SAMPLES + 1 - index
+            ) / self.TRAIL_SAMPLES
+            radius_scale = self.TRAIL_MIN_SCALE + (
+                self.TRAIL_MAX_SCALE - self.TRAIL_MIN_SCALE
+            ) * progress
             drawing.draw_smooth_circle(
                 surface,
                 (*color[:3], round(35 + 90 * progress)),
                 trail_position,
-                max(2, round(self.RADIUS * (0.18 + 0.22 * progress))),
+                max(2, round(self.RADIUS * radius_scale)),
             )
 
     # draw the potion
@@ -308,6 +318,8 @@ class CannonBall(Potion):
     SPEED = 1800.0
     CHARGE_TIME = 0.75
     RADIUS = 24
+    # inset wall checks where the long nozzle overlaps a wall edge
+    WALL_COLLISION_INSET = 18
     COLOR = (255, 142, 45)
     OUTLINE_COLOR = (90, 38, 12)
     ARC_SCALE = 0.0
@@ -316,6 +328,11 @@ class CannonBall(Potion):
     MAX_DISTANCE = None
     USES_POTION_SPRITE = False
     SPRITE_MAX_SIZE = RADIUS * 2
+    # the fast burger leaves a longer and wider trail than potion bottles
+    TRAIL_SAMPLES = 9
+    TRAIL_INTERVAL = 0.022
+    TRAIL_MIN_SCALE = 0.34
+    TRAIL_MAX_SCALE = 0.78
     _sprite_image = None
 
     # prepare the large burger source before mr donald can fire
@@ -494,11 +511,23 @@ class PotionArea:
         self.alive = current_time < self.end_time
 
     # check if player is inside the area
-    def contains_player(self, player_obj):
-        return circle_touches_player(self.position, self.RADIUS, player_obj)
+    def contains_player(self, player_obj, wall_objects=None):
+        if not circle_touches_player(self.position, self.RADIUS, player_obj):
+            return False
+
+        # a wall between the spill and player blocks potion damage
+        player_center = player_obj.get_hitbox().center
+        for wall_obj in wall_objects or []:
+            if walls.get_segment_entry_time(
+                self.position,
+                player_center,
+                wall_obj.visual_rect,
+            ) is not None:
+                return False
+        return True
 
     # draw transparent damage area
-    def draw(self, surface):
+    def draw(self, surface, wall_objects=None):
         if not self.alive:
             return
 
@@ -512,12 +541,24 @@ class PotionArea:
             (self.RADIUS + padding, self.RADIUS + padding),
             self.RADIUS,
         )
+        area_rect = pygame.Rect(
+            round(self.position.x - self.RADIUS - padding),
+            round(self.position.y - self.RADIUS - padding),
+            diameter,
+            diameter,
+        )
+        # erase wall-covered pixels so the spill stops at obstacle edges
+        for wall_obj in wall_objects or []:
+            overlap = area_rect.clip(wall_obj.visual_rect)
+            if overlap.width > 0 and overlap.height > 0:
+                local_overlap = overlap.move(
+                    -area_rect.left,
+                    -area_rect.top,
+                )
+                area_surface.fill((0, 0, 0, 0), local_overlap)
         surface.blit(
             area_surface,
-            (
-                round(self.position.x - self.RADIUS - padding),
-                round(self.position.y - self.RADIUS - padding),
-            ),
+            area_rect.topleft,
         )
 
 
@@ -526,9 +567,9 @@ class CannonImpact:
     TYPE = "cannon"
     RADIUS = 160
     DURATION = 0.3
-    # a direct hit still lets mr donald defeat dory in two shots
-    DAMAGE = 10
-    MIN_DAMAGE = 1
+    # stronger center damage makes solid cannon hits much more threatening
+    DAMAGE = 14
+    MIN_DAMAGE = 2
     COLOR = (255, 142, 45, 110)
 
     def __init__(
@@ -555,7 +596,7 @@ class CannonImpact:
     def contains_player(self, player_obj):
         return circle_touches_player(self.position, self.RADIUS, player_obj)
 
-    # lower damage linearly from ten at the center to one at the edge
+    # lower damage linearly from fourteen at the center to two at the edge
     def get_damage(self, player_obj):
         distance = distance_to_player(self.position, player_obj)
         if distance > self.RADIUS:

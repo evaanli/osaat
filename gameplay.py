@@ -15,8 +15,13 @@ import walls
 GAME_WIDTH = 1280
 GAME_HEIGHT = 720
 GAME_SIZE = (GAME_WIDTH, GAME_HEIGHT)
+# the reload cue ends as mr donald's attack becomes available again
+CANNON_RELOAD_SOUND_TIME = 0.624
 MATCH_BACKGROUND_FOLDER = (
     Path(__file__).resolve().parent / "assets" / "match_background"
+)
+DISPLAY_FONT_PATH = (
+    Path(__file__).resolve().parent / "assets" / "fonts" / "3Dumb.ttf"
 )
 
 
@@ -80,6 +85,7 @@ class Game:
         # death animation variables
         self.dead_player_number = None
         self.pending_dead_player_number = None
+        self.death_replay_time = None
         self.winner_player_number = None
         self.finisher_hold_until = 0
         self.death_animation_elapsed = 0.0
@@ -196,7 +202,7 @@ class Game:
         )
         limited_target = projectile_class.get_limited_target(original, target)
         clearance = (
-            projectile.CannonBall.RADIUS
+            -projectile.CannonBall.WALL_COLLISION_INSET
             if projectile_type == "cannon"
             else 0
         )
@@ -253,6 +259,65 @@ class Game:
         else:
             self.draw_potion_preview(screen, player_obj, mouse_position)
 
+    # draw a flat hand-inked aiming segment without neon effects
+    def draw_preview_path(self, surface, points, scale):
+        for color, width in (
+            ((24, 27, 44, 225), 10),
+            ((238, 165, 70, 205), 5),
+        ):
+            stroke_width = max(1, round(width * scale))
+            pygame.draw.lines(surface, color, False, points, stroke_width)
+            cap_radius = stroke_width / 2
+            drawing.draw_smooth_circle(
+                surface,
+                color,
+                points[0],
+                cap_radius,
+            )
+            drawing.draw_smooth_circle(
+                surface,
+                color,
+                points[-1],
+                cap_radius,
+            )
+
+    # add a small directional chevron along an aiming path
+    def draw_preview_chevron(
+        self,
+        surface,
+        center,
+        direction,
+        scale,
+        highlight=(238, 165, 70, 235),
+    ):
+        direction = pygame.Vector2(direction)
+        if direction.length_squared() == 0:
+            return
+        direction = direction.normalize()
+        normal = pygame.Vector2(-direction.y, direction.x)
+        center = pygame.Vector2(center)
+        tip = center + direction * 9 * scale
+        back = center - direction * 5 * scale
+        stroke_points = (
+            (back + normal * 6 * scale, tip),
+            (back - normal * 6 * scale, tip),
+        )
+        for start, end in stroke_points:
+            pygame.draw.line(
+                surface,
+                (24, 27, 44, 230),
+                start,
+                end,
+                5 * scale,
+            )
+            pygame.draw.line(
+                surface,
+                highlight,
+                start,
+                end,
+                2 * scale,
+            )
+
     # draw dory's curved aiming guide and highlighted landing area
     def draw_potion_preview(self, screen, player_obj, mouse_position):
         if mouse_position is None:
@@ -280,7 +345,7 @@ class Game:
             )
 
         landing_radius = projectile.PotionArea.PREVIEW_RADIUS
-        margin = 10
+        margin = 22
         left = math.floor(
             min(min(point.x for point in points), target.x - landing_radius)
             - margin
@@ -298,7 +363,7 @@ class Game:
             + margin
         )
 
-        # draw large and shrink once for smooth curves, rings, and round ends
+        # draw large and shrink once for smooth curves and round ends
         scale = 3
         preview_size = max(1, right - left), max(1, bottom - top)
         high_resolution_preview = pygame.Surface(
@@ -313,35 +378,23 @@ class Game:
             for point in points
         ]
 
-        border_width = 9 * scale
-        line_width = 3 * scale
-        pygame.draw.lines(
-            high_resolution_preview,
-            (16, 34, 70, 210),
-            False,
-            scaled_points,
-            border_width,
-        )
-        pygame.draw.lines(
-            high_resolution_preview,
-            (255, 255, 255, 205),
-            False,
-            scaled_points,
-            line_width,
-        )
-        for point in (scaled_points[0], scaled_points[-1]):
-            drawing.draw_smooth_circle(
+        # broken segments read clearly as a lob instead of a laser beam
+        for segment_start in range(0, 64, 10):
+            segment_end = min(64, segment_start + 6)
+            self.draw_preview_path(
                 high_resolution_preview,
-                (16, 34, 70, 210),
-                point,
-                border_width / 2,
+                scaled_points[segment_start:segment_end + 1],
+                scale,
             )
-            drawing.draw_smooth_circle(
-                high_resolution_preview,
-                (255, 255, 255, 205),
-                point,
-                line_width / 2,
-            )
+
+        arrow_index = 47
+        self.draw_preview_chevron(
+            high_resolution_preview,
+            scaled_points[arrow_index],
+            pygame.Vector2(scaled_points[arrow_index + 1])
+            - scaled_points[arrow_index - 1],
+            scale,
+        )
 
         landing_center = (
             round((target.x - left) * scale),
@@ -349,22 +402,56 @@ class Game:
         )
         drawing.draw_smooth_circle(
             high_resolution_preview,
-            (16, 34, 70, 230),
+            (24, 27, 44, 235),
             landing_center,
-            (landing_radius + 7) * scale,
+            (landing_radius + 6) * scale,
         )
         drawing.draw_smooth_circle(
             high_resolution_preview,
-            (255, 255, 255, 220),
+            (238, 165, 70, 225),
             landing_center,
-            landing_radius * scale,
+            (landing_radius + 2) * scale,
         )
         drawing.draw_smooth_circle(
             high_resolution_preview,
-            (255, 255, 255, 42),
+            (238, 165, 70, 82),
             landing_center,
             (landing_radius - 3) * scale,
         )
+        drawing.draw_smooth_circle(
+            high_resolution_preview,
+            (24, 27, 44, 235),
+            landing_center,
+            3 * scale,
+        )
+
+        # four short ticks make the landing circle read as a precise reticle
+        for direction in (
+            pygame.Vector2(1, 0),
+            pygame.Vector2(-1, 0),
+            pygame.Vector2(0, 1),
+            pygame.Vector2(0, -1),
+        ):
+            tick_start = pygame.Vector2(landing_center) + direction * (
+                landing_radius + 1
+            ) * scale
+            tick_end = pygame.Vector2(landing_center) + direction * (
+                landing_radius + 10
+            ) * scale
+            pygame.draw.line(
+                high_resolution_preview,
+                (24, 27, 44, 240),
+                tick_start,
+                tick_end,
+                6 * scale,
+            )
+            pygame.draw.line(
+                high_resolution_preview,
+                (238, 165, 70, 235),
+                tick_start,
+                tick_end,
+                2 * scale,
+            )
         preview = pygame.transform.smoothscale(
             high_resolution_preview,
             preview_size,
@@ -384,8 +471,8 @@ class Game:
         )
 
         # supersample the line and marker so diagonal aim stays smooth
-        marker_radius = 11
-        margin = 12
+        marker_radius = 15
+        margin = 24
         left = math.floor(min(original.x, target.x) - marker_radius - margin)
         top = math.floor(min(original.y, target.y) - marker_radius - margin)
         right = math.ceil(max(original.x, target.x) + marker_radius + margin)
@@ -405,20 +492,47 @@ class Game:
             round((target.y - top) * scale),
         )
 
-        pygame.draw.line(
-            high_resolution_preview,
-            (16, 34, 70, 210),
-            start,
-            end,
-            9 * scale,
-        )
-        pygame.draw.line(
-            high_resolution_preview,
-            (255, 255, 255, 205),
-            start,
-            end,
-            3 * scale,
-        )
+        line_direction = pygame.Vector2(end) - start
+        if line_direction.length_squared() > 0:
+            line_direction = line_direction.normalize()
+            line_normal = pygame.Vector2(
+                -line_direction.y,
+                line_direction.x,
+            )
+            start_vector = pygame.Vector2(start)
+            end_vector = pygame.Vector2(end)
+            outer_band = (
+                start_vector + line_normal * 8 * scale,
+                end_vector + line_normal * 16 * scale,
+                end_vector - line_normal * 16 * scale,
+                start_vector - line_normal * 8 * scale,
+            )
+            inner_band = (
+                start_vector + line_normal * 5 * scale,
+                end_vector + line_normal * 12 * scale,
+                end_vector - line_normal * 12 * scale,
+                start_vector - line_normal * 5 * scale,
+            )
+            pygame.draw.polygon(
+                high_resolution_preview,
+                (24, 27, 44, 220),
+                outer_band,
+            )
+            pygame.draw.polygon(
+                high_resolution_preview,
+                (238, 145, 61, 120),
+                inner_band,
+            )
+
+        for progress in (0.38, 0.68):
+            center = pygame.Vector2(start).lerp(end, progress)
+            self.draw_preview_chevron(
+                high_resolution_preview,
+                center,
+                line_direction,
+                scale,
+                (238, 165, 70, 235),
+            )
 
         # use two crossed strokes instead of a circular landing marker
         marker = marker_radius * scale
@@ -435,18 +549,25 @@ class Game:
         for stroke_start, stroke_end in x_strokes:
             pygame.draw.line(
                 high_resolution_preview,
-                (16, 34, 70, 235),
+                (24, 27, 44, 245),
                 stroke_start,
                 stroke_end,
-                10 * scale,
+                11 * scale,
             )
             pygame.draw.line(
                 high_resolution_preview,
-                (255, 255, 255, 235),
+                (238, 145, 61, 235),
                 stroke_start,
                 stroke_end,
-                3 * scale,
+                5 * scale,
             )
+
+        drawing.draw_smooth_circle(
+            high_resolution_preview,
+            (24, 27, 44, 245),
+            end,
+            3 * scale,
+        )
 
         preview = pygame.transform.smoothscale(
             high_resolution_preview,
@@ -454,12 +575,41 @@ class Game:
         )
         screen.blit(preview, (left, top))
 
-    # draw a health bar above a player
+    # place a health bar against visible art instead of transparent padding
+    def get_health_bar_rect(self, screen, player_obj):
+        hitbox = player_obj.get_hitbox()
+        if player_obj.sprite is None:
+            visible_rect = player_obj.get_rect().copy()
+        else:
+            visible_rect = player_obj.sprite.get_opaque_rect().move(
+                player_obj.get_sprite_position()
+            )
+
+        # center on the body so aiming the cannon cannot shift the bar
+        bar_width = max(round(player_obj.width), hitbox.width)
+        bar_height = 8
+        screen_rect = screen.get_rect()
+        margin = 6
+        bar_x = round(hitbox.centerx - bar_width / 2)
+        bar_y = visible_rect.top - bar_height - margin
+
+        # move below the character when there is no room above it
+        if bar_y < screen_rect.top + margin:
+            bar_y = visible_rect.bottom + margin
+
+        bar_x = max(
+            screen_rect.left + margin,
+            min(bar_x, screen_rect.right - margin - bar_width),
+        )
+        bar_y = max(
+            screen_rect.top + margin,
+            min(bar_y, screen_rect.bottom - margin - bar_height),
+        )
+        return pygame.Rect(bar_x, bar_y, bar_width, bar_height)
+
+    # draw a health bar near a player
     def draw_health_bar(self, screen, player_obj, player_number=None):
-        bar_x = round(player_obj.x)
-        # taller sprites still keep the bar above their visible image
-        bar_y = player_obj.get_sprite_position()[1] - 14
-        bar_width = player_obj.width
+        bar_rect = self.get_health_bar_rect(screen, player_obj)
         if player_number is None:
             ghost_health = player_obj.hp
         else:
@@ -468,25 +618,32 @@ class Game:
                 player_obj,
             )
         ghost_width = round(
-            bar_width * ghost_health / player_obj.max_hp
+            bar_rect.width * ghost_health / player_obj.max_hp
         )
-        health_width = round(bar_width * player_obj.hp / player_obj.max_hp)
-        pygame.draw.rect(screen, (45, 45, 45), (bar_x, bar_y, bar_width, 8))
+        health_width = round(
+            bar_rect.width * player_obj.hp / player_obj.max_hp
+        )
+        pygame.draw.rect(screen, (45, 45, 45), bar_rect)
         pygame.draw.rect(
             screen,
             (235, 72, 58),
-            (bar_x, bar_y, ghost_width, 8),
+            (bar_rect.x, bar_rect.y, ghost_width, bar_rect.height),
         )
-        pygame.draw.rect(screen, (50, 210, 80), (bar_x, bar_y, health_width, 8))
+        pygame.draw.rect(
+            screen,
+            (50, 210, 80),
+            (bar_rect.x, bar_rect.y, health_width, bar_rect.height),
+        )
 
     # show the active player how much of the turn remains as a draining circle
     def draw_turn_timer(self, screen, recording_time):
         if self.turn_timer_font is None:
-            self.turn_timer_font = pygame.font.SysFont(
-                "freesansbold",
-                34,
-                bold=True,
+            font_path = (
+                str(DISPLAY_FONT_PATH)
+                if DISPLAY_FONT_PATH.is_file()
+                else None
             )
+            self.turn_timer_font = pygame.font.Font(font_path, 34)
 
         elapsed = self.recording_system.timer_system.get_timestamp()
         remaining = max(0.0, recording_time / 1000.0 - elapsed)
@@ -647,13 +804,29 @@ class Game:
     ):
         # cooldown time moves only during its owner's active recording turn
         if active_player_number is not None:
+            previous_cooldown = self.projectile_cooldowns.get(
+                active_player_number,
+                0.0,
+            )
             self.projectile_cooldowns[active_player_number] = max(
                 0.0,
-                self.projectile_cooldowns.get(active_player_number, 0.0)
-                - max(0.0, dt),
+                previous_cooldown - max(0.0, dt),
             )
 
-        sound_events = []
+            # play once when the remaining cooldown matches the sound length
+            if (
+                active_player is not None
+                and active_player.projectile_type == "cannon"
+                and previous_cooldown > CANNON_RELOAD_SOUND_TIME
+                and self.projectile_cooldowns[active_player_number]
+                <= CANNON_RELOAD_SOUND_TIME
+            ):
+                sound_events = ["cannon_reload"]
+            else:
+                sound_events = []
+        else:
+            sound_events = []
+
         for potion_obj in self.projectiles:
             # only the player currently recording can advance their throws
             if (
@@ -702,7 +875,12 @@ class Game:
         return events
 
     # check if a player died during replay
-    def update_dead_player(self, player1, player2):
+    def update_dead_player(
+        self,
+        player1,
+        player2,
+        replay_time=None,
+    ):
         pending_dead_player = None
         pending_winner = None
         if player1.hp <= 0 and player2.hp <= 0:
@@ -721,6 +899,7 @@ class Game:
         # hold on the final impact before switching to the death animation
         if self.pending_dead_player_number is None:
             self.pending_dead_player_number = pending_dead_player
+            self.death_replay_time = replay_time
             self.winner_player_number = pending_winner
             self.finisher_hold_until = pygame.time.get_ticks() + 550
         elif pygame.time.get_ticks() >= self.finisher_hold_until:
@@ -785,6 +964,7 @@ class Game:
         self.projectile_cooldowns = {1: 0.0, 2: 0.0}
         self.dead_player_number = None
         self.pending_dead_player_number = None
+        self.death_replay_time = None
         self.winner_player_number = None
         self.finisher_hold_until = 0
         self.battle_effects.reset()
@@ -821,9 +1001,79 @@ class Game:
         # effects continue through this boundary in the full replay
         self.match_round_end_times.append(self.match_recording_time)
 
-    # stop recording and prepare the full match replay
-    def finish_match_recording(self):
+    # trim one recorded position track at an exact match timestamp
+    def trim_match_track(self, track, cutoff):
+        if not track:
+            return {}
+
+        timestamps = sorted(track)
+        trimmed = {
+            timestamp: track[timestamp]
+            for timestamp in timestamps
+            if timestamp <= cutoff
+        }
+        if cutoff in trimmed:
+            return trimmed
+
+        left_times = [time for time in timestamps if time < cutoff]
+        right_times = [time for time in timestamps if time > cutoff]
+        if not left_times:
+            trimmed[cutoff] = track[timestamps[0]].copy()
+            return trimmed
+        if not right_times:
+            trimmed[cutoff] = track[left_times[-1]].copy()
+            return trimmed
+
+        left_time = left_times[-1]
+        right_time = right_times[0]
+        left_state = track[left_time]
+        right_state = track[right_time]
+        alpha = (cutoff - left_time) / (right_time - left_time)
+        state = [
+            left_state[index]
+            + (right_state[index] - left_state[index]) * alpha
+            for index in range(4)
+        ]
+        if len(left_state) > 4:
+            state.append(
+                left_state[4] if alpha < 0.5 else right_state[4]
+            )
+        trimmed[cutoff] = state
+        return trimmed
+
+    # stop recording at death and prepare the full match replay
+    def finish_match_recording(self, final_round_time=None):
         self.match_recording = False
+        if final_round_time is not None and self.match_round_end_times:
+            round_start = (
+                self.match_round_end_times[-2]
+                if len(self.match_round_end_times) > 1
+                else 0.0
+            )
+            match_cutoff = min(
+                self.match_round_end_times[-1],
+                round_start + max(0.0, final_round_time),
+            )
+            self.match_recording_system.player1_positions = (
+                self.trim_match_track(
+                    self.match_recording_system.player1_positions,
+                    match_cutoff,
+                )
+            )
+            self.match_recording_system.player2_positions = (
+                self.trim_match_track(
+                    self.match_recording_system.player2_positions,
+                    match_cutoff,
+                )
+            )
+            self.match_recording_system.projectile_events = [
+                event
+                for event in self.match_recording_system.projectile_events
+                if event["timestamp"] <= match_cutoff
+            ]
+            self.match_round_end_times[-1] = match_cutoff
+            self.match_recording_time = match_cutoff
+
         # keep round boundaries as full match timeline metadata
         self.match_replay_system = replay.ReplaySystem(
             self.match_recording_system.player1_positions,
@@ -840,6 +1090,7 @@ class Game:
         player2.reset_health()
         self.dead_player_number = None
         self.pending_dead_player_number = None
+        self.death_replay_time = None
         self.winner_player_number = None
         self.finisher_hold_until = 0
         self.battle_effects.reset(player1, player2)
@@ -888,6 +1139,8 @@ class Game:
             live_projectile_owner=1,
             throw_preview=throw_preview,
         )
+        self.draw_health_bar(screen, player1)
+        self.draw_health_bar(screen, player2)
         self.draw_turn_timer(screen, recording_time)
         # return if overtime
         return self.recording_system.timer_system.get_timestamp() >= recording_time / 1000
@@ -939,6 +1192,8 @@ class Game:
             live_projectile_owner=2,
             throw_preview=throw_preview,
         )
+        self.draw_health_bar(screen, player1)
+        self.draw_health_bar(screen, player2)
         self.draw_turn_timer(screen, recording_time)
 
         # return if overtime
@@ -1013,11 +1268,19 @@ class Game:
         self.paused_areas = list(self.replay_system.active_areas)
 
     # compose replay-only combat effects before applying camera shake
-    def draw_replay_scene(self, screen, replay_system, player1, player2):
-        self.audio_events.extend(replay_system.sound_events)
-        self.audio_events.extend(
-            "player_hit" for event in replay_system.damage_events
-        )
+    def draw_replay_scene(
+        self,
+        screen,
+        replay_system,
+        player1,
+        player2,
+        include_audio=True,
+    ):
+        if include_audio:
+            self.audio_events.extend(replay_system.sound_events)
+            self.audio_events.extend(
+                "player_hit" for event in replay_system.damage_events
+            )
         self.battle_effects.add_damage_events(
             replay_system.damage_events,
             player1,
@@ -1034,6 +1297,7 @@ class Game:
         self.battle_effects.draw_focus_dim(scene, replay_system)
         self.draw_players(scene, player1, player2)
         replay_system.draw_projectiles(scene)
+        self.battle_effects.draw_shockwaves(scene)
         self.battle_effects.draw_particles(scene)
 
         # a one-frame white silhouette makes every registered hit obvious
@@ -1056,8 +1320,13 @@ class Game:
 
     # replay phase
     def replay(self, screen, player1, player2):
-        # play out the replay
-        finished = self.replay_system.play_out(player1, player2)
+        # stop the timeline on the first frame where a player reaches zero hp
+        if self.pending_dead_player_number is None:
+            finished = self.replay_system.play_out(player1, player2)
+        else:
+            finished = False
+            self.replay_system.sound_events = []
+            self.replay_system.damage_events = []
 
         self.draw_replay_scene(
             screen,
@@ -1065,7 +1334,11 @@ class Game:
             player1,
             player2,
         )
-        self.update_dead_player(player1, player2)
+        self.update_dead_player(
+            player1,
+            player2,
+            self.replay_system.last_time,
+        )
         if self.pending_dead_player_number is not None:
             finished = False
 
@@ -1077,18 +1350,67 @@ class Game:
 
     # replay the full match
     def replay_match(self, screen, player1, player2):
-        finished = self.match_replay_system.play_out(player1, player2)
+        if self.pending_dead_player_number is None:
+            finished = self.match_replay_system.play_out(player1, player2)
+        else:
+            finished = False
+            self.match_replay_system.sound_events = []
+            self.match_replay_system.damage_events = []
         self.draw_replay_scene(
             screen,
             self.match_replay_system,
             player1,
             player2,
         )
-        self.update_dead_player(player1, player2)
+        self.update_dead_player(
+            player1,
+            player2,
+            self.match_replay_system.last_time,
+        )
         if self.pending_dead_player_number is not None:
             finished = False
 
         return finished
+
+    # reset the saved match without clearing the winner shown by the viewer
+    def start_match_viewer(self, player1, player2):
+        player1.reset_health()
+        player2.reset_health()
+        self.dead_player_number = None
+        self.pending_dead_player_number = None
+        self.finisher_hold_until = 0
+        self.audio_events = []
+        self.battle_effects.reset(player1, player2)
+        self.match_replay_system.restart()
+
+    # draw the saved match at one exact video-style timeline position
+    def draw_match_viewer(
+        self,
+        screen,
+        player1,
+        player2,
+        current_time,
+        play_sounds=True,
+    ):
+        rewinding = (
+            current_time + 0.0001
+            < self.match_replay_system.last_time
+        )
+        if rewinding:
+            self.battle_effects.reset(player1, player2)
+        self.match_replay_system.seek_to(
+            player1,
+            player2,
+            current_time,
+            play_sounds,
+        )
+        self.draw_replay_scene(
+            screen,
+            self.match_replay_system,
+            player1,
+            player2,
+            include_audio=play_sounds,
+        )
 
     # start the death animation
     def start_death_animation(self, player_number):
@@ -1165,7 +1487,12 @@ class Game:
         if self.winner_font is None:
             if not pygame.font.get_init():
                 pygame.font.init()
-            self.winner_font = pygame.font.Font(None, 72)
+            font_path = (
+                str(DISPLAY_FONT_PATH)
+                if DISPLAY_FONT_PATH.is_file()
+                else None
+            )
+            self.winner_font = pygame.font.Font(font_path, 72)
 
         if self.winner_player_number == 0:
             winner_text = "Draw"

@@ -15,7 +15,8 @@ DEFAULT_WALL_RECTS = (
     (288, 74, 83, 78),
     (459, 74, 84, 78),
 )
-WALL_COLLISION_MARGIN = 6
+# inset mapped obstacles so their collision is more forgiving than the artwork
+WALL_COLLISION_MARGIN = 12
 
 
 class Wall:

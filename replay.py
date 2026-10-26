@@ -6,6 +6,9 @@ import pygame
 import projectile
 import walls
 
+
+CANNON_RELOAD_DELAY = 1.126
+
 class ReplaySystem:
     def __init__(
         self,
@@ -73,6 +76,7 @@ class ReplaySystem:
         self.projectile_index = 0
         self.active_projectiles = []
         self.active_areas = []
+        self.pending_reload_times = []
 
         for event in self.area_events:
             area = projectile.create_area(
@@ -112,6 +116,33 @@ class ReplaySystem:
             self.hit_stop_remaining,
             max(0.0, duration),
         )
+
+    # rebuild replay state when the viewer seeks to another timestamp
+    def seek_to(self, player1, player2, target_time, play_sounds=True):
+        target_time = min(self.duration, max(0.0, target_time))
+        rewinding = target_time + 0.0001 < self.last_time
+        if rewinding:
+            player1.reset_health()
+            player2.reset_health()
+            self.reset_effects()
+
+        collected_sounds = []
+        step = 1.0 / 60.0
+        while self.last_time + step < target_time:
+            self.play_out(
+                player1,
+                player2,
+                current_time=self.last_time + step,
+            )
+            if play_sounds:
+                collected_sounds.extend(self.sound_events)
+
+        self.play_out(player1, player2, current_time=target_time)
+        if play_sounds:
+            collected_sounds.extend(self.sound_events)
+            self.sound_events = collected_sounds
+        else:
+            self.sound_events = []
 
     # update projectile function
     def update_projectiles(self, current_time, player1, player2):
@@ -154,7 +185,20 @@ class ReplaySystem:
                     if potion_obj.type == "cannon"
                     else "potion_throw"
                 )
+                if potion_obj.type == "cannon":
+                    self.pending_reload_times.append(
+                        throw_time + CANNON_RELOAD_DELAY
+                    )
             self.projectile_index += 1
+
+        # replay the reload at the same point in the active-turn timeline
+        remaining_reload_times = []
+        for reload_time in self.pending_reload_times:
+            if self.last_time < reload_time <= current_time:
+                self.sound_events.append("cannon_reload")
+            elif reload_time > current_time:
+                remaining_reload_times.append(reload_time)
+        self.pending_reload_times = remaining_reload_times
 
         # update projectiles and create areas when they break
         still_active = []
@@ -171,7 +215,7 @@ class ReplaySystem:
                 firing_player = player1 if owner == 1 else player2
                 new_original = firing_player.get_projectile_origin()
                 clearance = (
-                    projectile.CannonBall.RADIUS
+                    -projectile.CannonBall.WALL_COLLISION_INSET
                     if potion_obj.type == "cannon"
                     else 0
                 )
@@ -368,7 +412,7 @@ class ReplaySystem:
 
             if area.alive:
                 # check the opponent of the player who threw the potion
-                if area.contains_player(opponent):
+                if area.contains_player(opponent, self.walls):
                     touching_area[opponent_number] = area.position
                 still_active.append(area)
 
@@ -380,7 +424,10 @@ class ReplaySystem:
     # draw active damage areas
     def draw_areas(self, screen):
         for area in self.active_areas:
-            area.draw(screen)
+            if isinstance(area, projectile.PotionArea):
+                area.draw(screen, self.walls)
+            else:
+                area.draw(screen)
 
     # actually run the replay by changing the player properties
     def apply_track(self, player_obj, track, current_time):

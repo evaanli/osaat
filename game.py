@@ -11,7 +11,7 @@ pygame.init()
 
 # initialize screen
 screen = pygame.display.set_mode(gameplay.GAME_SIZE, pygame.RESIZABLE)
-pygame.display.set_caption("OSAAT")
+pygame.display.set_caption("Fiendish Food Fights")
 # gameplay always draws at this resolution before window scaling
 game_surface = pygame.Surface(gameplay.GAME_SIZE).convert()
 
@@ -45,6 +45,8 @@ MR_DONALD_SIZE = (150, 150)
 MR_DONALD_FRAME_TIME_MS = 100
 MR_DONALD_HITBOX_SIZE = (100, 28)
 MR_DONALD_HITBOX_OFFSET = (-13, 0)
+# charge, fire, then finish the reload before another shot can begin
+MR_DONALD_PROJECTILE_COOLDOWN = 1.75
 # center both directions on the middle of the tank tracks
 MR_DONALD_SPRITE_CENTERS = {
     "left": (96, 97.5),
@@ -67,6 +69,7 @@ def create_character(character_name, player_number):
             max_hp=MR_DONALD_MAX_HP,
             direction_follows_mouse=True,
             projectile_type="cannon",
+            projectile_cooldown=MR_DONALD_PROJECTILE_COOLDOWN,
         )
         player_obj.move_speed = 1
     else:
@@ -111,6 +114,7 @@ projectile.Potion.preload_assets()
 projectile.CannonBall.preload_assets()
 character_menu = menu.CharacterMenu(ASSET_FOLDER)
 match_transition = menu.MatchTransition(ASSET_FOLDER)
+match_replay_controls = menu.MatchReplayControls()
 audio_system = audio.AudioSystem(ASSET_FOLDER)
 audio_system.play_menu_music()
 
@@ -132,6 +136,11 @@ times_up_start = 0
 times_up_target = None
 times_up_surface = None
 times_up_duration = 1000
+end_replay_time = 0.0
+end_replay_playing = True
+end_replay_dragging = False
+end_replay_resume_after_drag = False
+end_replay_seek_pending = False
 
 # only match phases use the fixed aspect ratio canvas
 GAMEPLAY_PHASES = {
@@ -175,12 +184,14 @@ while running:
                     game.initialize_match_recording()
                 game.initialize_recording()
                 phase = "record1"
-            elif event.key == pygame.K_BACKSPACE and phase in ("death", "game_over"):
-                # replay the saved match from the beginning
-                if game.match_replay_system is not None:
-                    audio_system.play_battle_music()
-                    game.start_match_replay(player1, player2)
-                    phase = "match_replay"
+            elif event.key == pygame.K_SPACE and phase == "game_over":
+                end_replay_playing = not end_replay_playing
+                audio_system.play("ui_start")
+            elif event.key == pygame.K_BACKSPACE and phase == "game_over":
+                # restart the finished-match video from the beginning
+                end_replay_time = 0.0
+                end_replay_playing = True
+                end_replay_seek_pending = True
         elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             if phase == "menu":
                 menu_action = character_menu.handle_click(event.pos)
@@ -208,6 +219,47 @@ while running:
                     countdown_start = pygame.time.get_ticks()
                     countdown_sound_step = -1
                     phase = "countdown"
+            elif phase == "game_over":
+                target = game.window_to_game(event.pos, screen.get_size())
+                if target is not None:
+                    replay_action = match_replay_controls.get_action(target)
+                    if replay_action == "back":
+                        audio_system.play("ui_start")
+                        audio_system.stop_music()
+                        audio_system.play_menu_music()
+                        game = gameplay.Game(FPS)
+                        player1 = None
+                        player2 = None
+                        round_reference_surface = None
+                        phase = "menu"
+                    elif replay_action == "play_again":
+                        audio_system.play("ui_start")
+                        player1_name = player1.character_name
+                        player2_name = player2.character_name
+                        game = gameplay.Game(FPS)
+                        player1 = create_character(player1_name, 1)
+                        player2 = create_character(player2_name, 2)
+                        game.initialize_match_recording()
+                        round_reference_surface = game.capture_round_reference(
+                            player1,
+                            player2,
+                        )
+                        handoff_target = "record1"
+                        handoff_title = "player 1's turn"
+                        end_replay_dragging = False
+                        phase = "handoff"
+                    elif replay_action == "toggle":
+                        audio_system.play("ui_start")
+                        end_replay_playing = not end_replay_playing
+                    elif replay_action == "timeline":
+                        end_replay_resume_after_drag = end_replay_playing
+                        end_replay_playing = False
+                        end_replay_dragging = True
+                        end_replay_time = (
+                            match_replay_controls.get_timeline_fraction(target)
+                            * game.match_replay_system.duration
+                        )
+                        end_replay_seek_pending = True
             else:
                 target = game.window_to_game(event.pos, screen.get_size())
                 # clicks in a black letterbox bar do not enter gameplay
@@ -224,6 +276,25 @@ while running:
                             if thrown.type == "cannon"
                             else "potion_throw"
                         )
+        elif event.type == pygame.MOUSEMOTION and end_replay_dragging:
+            target = game.window_to_game(event.pos, screen.get_size())
+            if target is not None:
+                end_replay_time = (
+                    match_replay_controls.get_timeline_fraction(target)
+                    * game.match_replay_system.duration
+                )
+                end_replay_seek_pending = True
+        elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+            if end_replay_dragging:
+                target = game.window_to_game(event.pos, screen.get_size())
+                if target is not None:
+                    end_replay_time = (
+                        match_replay_controls.get_timeline_fraction(target)
+                        * game.match_replay_system.duration
+                    )
+                end_replay_dragging = False
+                end_replay_playing = end_replay_resume_after_drag
+                end_replay_seek_pending = True
 
     # convert the mouse only while the fixed gameplay canvas is active
     mouse_game_position = None
@@ -359,7 +430,7 @@ while running:
             audio_system.play(sound_name)
         if game.dead_player_number is not None:
             # save the full match as soon as a player dies
-            game.finish_match_recording()
+            game.finish_match_recording(game.death_replay_time)
             game.start_death_animation(game.dead_player_number)
             audio_system.play("knockout")
             phase = "death"
@@ -393,11 +464,60 @@ while running:
         if game.death_animation(render_surface, dt, player1, player2):
             audio_system.stop_music()
             audio_system.play("victory")
+            game.start_match_viewer(player1, player2)
+            end_replay_time = 0.0
+            end_replay_playing = True
+            end_replay_dragging = False
+            end_replay_seek_pending = False
+            audio_system.play_battle_music()
             phase = "game_over"
 
-    # freeze on black until backspace is pressed
+    # play the full saved match behind video-style end controls
     elif phase == "game_over":
-        game.draw_winner(render_surface, player1, player2)
+        replay_duration = game.match_replay_system.duration
+        if end_replay_playing and not end_replay_dragging:
+            end_replay_time = min(
+                replay_duration,
+                end_replay_time + dt,
+            )
+            if end_replay_time >= replay_duration:
+                end_replay_playing = False
+
+        if end_replay_dragging:
+            replay_draw_time = game.match_replay_system.last_time
+            replay_audio_enabled = False
+        else:
+            replay_draw_time = end_replay_time
+            replay_audio_enabled = (
+                end_replay_playing and not end_replay_seek_pending
+            )
+
+        game.draw_match_viewer(
+            render_surface,
+            player1,
+            player2,
+            replay_draw_time,
+            play_sounds=replay_audio_enabled,
+        )
+        for sound_name in game.pop_audio_events():
+            audio_system.play(sound_name)
+        if not end_replay_dragging:
+            end_replay_seek_pending = False
+
+        if game.winner_player_number == 0:
+            winner_color = WHITE
+        elif game.winner_player_number == 1:
+            winner_color = player1.color
+        else:
+            winner_color = player2.color
+        match_replay_controls.draw(
+            render_surface,
+            game.winner_player_number,
+            winner_color,
+            end_replay_time,
+            replay_duration,
+            end_replay_playing,
+        )
 
     # do not advance animations during a phase change or frozen phase
     stable_phase = phase if phase == rendered_phase else None
@@ -406,8 +526,18 @@ while running:
             dt,
             player1,
             player2,
-            player1_active=stable_phase in ("record1", "replay", "match_replay"),
-            player2_active=stable_phase in ("record2", "replay", "match_replay"),
+            player1_active=stable_phase in (
+                "record1",
+                "replay",
+                "match_replay",
+                "game_over",
+            ),
+            player2_active=stable_phase in (
+                "record2",
+                "replay",
+                "match_replay",
+                "game_over",
+            ),
         )
 
     if gameplay_frame:

@@ -15,6 +15,7 @@ class BattleEffects:
     # clear short-lived visuals and reset the effect clock
     def reset(self, player1=None, player2=None):
         self.particles = []
+        self.shockwaves = []
         self.damage_numbers = []
         self.flash_timers = {1: 0.0, 2: 0.0}
         self.shake_time = 0.0
@@ -45,6 +46,23 @@ class BattleEffects:
 
             heavy = event["source"] == "cannon"
             lethal = event["health_after"] <= 0
+            hitbox = player_obj.get_hitbox()
+            contact = pygame.Vector2(
+                max(hitbox.left, min(impact.x, hitbox.right)),
+                max(hitbox.top, min(impact.y, hitbox.bottom)),
+            )
+            shockwave_duration = 0.30 if heavy else 0.22
+            self.shockwaves.append(
+                {
+                    "position": contact,
+                    "color": (255, 159, 56) if heavy else (190, 105, 255),
+                    "life": shockwave_duration,
+                    "maximum_life": shockwave_duration,
+                    "start_radius": 8 if heavy else 5,
+                    "end_radius": 92 if heavy else 46,
+                    "width": 7 if heavy else 5,
+                }
+            )
             particle_count = 38 if lethal else (24 if heavy else 13)
             base_color = (255, 159, 56) if heavy else (190, 105, 255)
             base_angle = math.atan2(force.y, force.x)
@@ -110,6 +128,14 @@ class BattleEffects:
             particle["position"] += particle["velocity"] * dt
         self.particles = [
             particle for particle in self.particles if particle["life"] > 0.0
+        ]
+
+        for shockwave in self.shockwaves:
+            shockwave["life"] -= dt
+        self.shockwaves = [
+            shockwave
+            for shockwave in self.shockwaves
+            if shockwave["life"] > 0.0
         ]
 
         for number in self.damage_numbers:
@@ -191,6 +217,57 @@ class BattleEffects:
                 color,
                 particle["position"],
                 radius,
+            )
+
+    # draw a quick outlined ring from each registered hit point
+    def draw_shockwaves(self, surface):
+        scale = 3
+        for shockwave in self.shockwaves:
+            progress = 1.0 - (
+                shockwave["life"] / shockwave["maximum_life"]
+            )
+            eased_progress = 1.0 - (1.0 - progress) ** 3
+            radius = round(
+                shockwave["start_radius"]
+                + (
+                    shockwave["end_radius"]
+                    - shockwave["start_radius"]
+                )
+                * eased_progress
+            )
+            alpha = max(0, round(230 * (1.0 - progress) ** 2))
+            width = max(1, round(shockwave["width"] * (1.0 - progress * 0.45)))
+            padding = width + 3
+            diameter = (radius + padding) * 2
+            ring = pygame.Surface(
+                (diameter * scale, diameter * scale),
+                pygame.SRCALPHA,
+            )
+            center = (radius + padding) * scale
+            pygame.draw.circle(
+                ring,
+                (24, 27, 44, alpha),
+                (center, center),
+                radius * scale,
+                (width + 3) * scale,
+            )
+            pygame.draw.circle(
+                ring,
+                (*shockwave["color"], alpha),
+                (center, center),
+                radius * scale,
+                width * scale,
+            )
+            ring = pygame.transform.smoothscale(
+                ring,
+                (diameter, diameter),
+            )
+            surface.blit(
+                ring,
+                (
+                    round(shockwave["position"].x - radius - padding),
+                    round(shockwave["position"].y - radius - padding),
+                ),
             )
 
     # draw outlined bouncing damage values over the fighters

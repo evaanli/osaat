@@ -26,6 +26,7 @@ class AudioSystem:
             "potion_break": 0.65,
             "cannon_charge": 0.55,
             "cannon_fire": 0.8,
+            "cannon_reload": 0.65,
             "cannon_impact": 0.8,
             "player_hit": 0.55,
             "knockout": 0.75,

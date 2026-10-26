@@ -7,5 +7,6 @@ All included audio is released under CC0.
 - `sfx/ui_move.wav`, `sfx/ui_start.wav`, `sfx/countdown.wav`, and `sfx/cannon_charge.wav`: [Kenney Interface Sounds](https://kenney.nl/assets/interface-sounds).
 - `sfx/potion_break.wav`, `sfx/cannon_fire.wav`, `sfx/cannon_impact.wav`, and `sfx/player_hit.wav`: [Kenney Impact Sounds](https://kenney.nl/assets/impact-sounds).
 - `sfx/potion_throw.wav`: [Kenney RPG Audio](https://kenney.nl/assets/rpg-audio).
+- `sfx/cannon_reload.wav`: user-provided reload effect.
 
 The files were converted and volume-normalized for consistent in-game playback. Kenney attribution is not required, but the sources are recorded here for provenance.

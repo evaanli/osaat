@@ -5,6 +5,18 @@ import pygame
 
 
 CHARACTERS = ("dory to", "mr donald")
+DISPLAY_FONT_PATH = (
+    Path(__file__).resolve().parent
+    / "assets"
+    / "fonts"
+    / "3Dumb.ttf"
+)
+
+
+# load the bundled display face with a built-in fallback
+def load_display_font(size):
+    font_path = str(DISPLAY_FONT_PATH) if DISPLAY_FONT_PATH.is_file() else None
+    return pygame.font.Font(font_path, size)
 
 
 # load one transparent menu element without its large empty canvas
@@ -251,20 +263,14 @@ class MatchTransition:
             self.start_source,
             (start_width, start_height),
         )
-        self.title_font = pygame.font.SysFont(
-            "freesansbold",
-            max(32, round(height * 0.11)),
-            bold=True,
+        self.title_font = load_display_font(
+            max(32, round(height * 0.11))
         )
-        self.counter_font = pygame.font.SysFont(
-            "freesansbold",
-            max(80, round(height * 0.30)),
-            bold=True,
+        self.counter_font = load_display_font(
+            max(80, round(height * 0.30))
         )
-        self.time_up_font = pygame.font.SysFont(
-            "freesansbold",
-            max(52, round(height * 0.14)),
-            bold=True,
+        self.time_up_font = load_display_font(
+            max(52, round(height * 0.14))
         )
 
     # use the menu art while hiding all private gameplay information
@@ -371,17 +377,6 @@ class MatchTransition:
         surface.blit(border, border.get_rect(center=center))
         surface.blit(label, label.get_rect(center=center))
 
-        ring_radius = round(95 + local_progress * 110)
-        ring_surface = pygame.Surface(surface.get_size(), pygame.SRCALPHA)
-        pygame.draw.circle(
-            ring_surface,
-            (*color, max(0, round(120 * (1.0 - local_progress)))),
-            center,
-            ring_radius,
-            max(2, round(height * 0.008)),
-        )
-        surface.blit(ring_surface, (0, 0))
-
     # briefly freeze on the completed turn before showing the handoff
     def draw_times_up(self, surface, elapsed, reference_surface=None):
         self.draw_backdrop(surface, reference_surface)
@@ -413,3 +408,211 @@ class MatchTransition:
 
     def start_clicked(self, position):
         return self.start_rect.collidepoint(position)
+
+
+class MatchReplayControls:
+    def __init__(self):
+        self.layout_size = None
+        self.title_font = None
+        self.button_font = None
+        self.time_font = None
+        self.back_rect = pygame.Rect(0, 0, 0, 0)
+        self.play_rect = pygame.Rect(0, 0, 0, 0)
+        self.play_again_rect = pygame.Rect(0, 0, 0, 0)
+        self.timeline_rect = pygame.Rect(0, 0, 0, 0)
+        self.timeline_hit_rect = pygame.Rect(0, 0, 0, 0)
+
+    # rebuild fonts when the fixed replay canvas changes size
+    def prepare_layout(self, size):
+        if size == self.layout_size:
+            return
+        self.layout_size = size
+        height = size[1]
+        self.title_font = load_display_font(
+            max(24, round(height * 0.045))
+        )
+        self.button_font = pygame.font.SysFont(
+            "freesansbold",
+            max(14, round(height * 0.023)),
+            bold=True,
+        )
+        self.time_font = pygame.font.SysFont(
+            "freesans",
+            max(13, round(height * 0.019)),
+            bold=True,
+        )
+
+    # format video time without showing distracting decimal places
+    def format_time(self, seconds):
+        seconds = max(0, round(seconds))
+        return f"{seconds // 60}:{seconds % 60:02d}"
+
+    # draw a temporary rectangular button until final artwork is available
+    def draw_button(self, surface, rectangle, label, active=False):
+        fill = (54, 151, 204) if active else (22, 45, 73)
+        pygame.draw.rect(surface, (5, 14, 28), rectangle.inflate(4, 4), 0, 8)
+        pygame.draw.rect(surface, fill, rectangle, 0, 6)
+        pygame.draw.rect(surface, (142, 225, 255), rectangle, 2, 6)
+        text = self.button_font.render(label, True, (255, 255, 255))
+        surface.blit(text, text.get_rect(center=rectangle.center))
+
+    # overlay video controls while leaving the entire replay visible behind them
+    def draw(
+        self,
+        surface,
+        winner_number,
+        winner_color,
+        current_time,
+        duration,
+        playing,
+    ):
+        self.prepare_layout(surface.get_size())
+        width, height = surface.get_size()
+
+        winner_text = (
+            "DRAW"
+            if winner_number == 0
+            else f"PLAYER {winner_number} WINS"
+        )
+        title = self.title_font.render(winner_text, True, winner_color)
+        title_shadow = self.title_font.render(
+            winner_text,
+            True,
+            (4, 12, 28),
+        )
+        center = (width // 2, 34)
+        title_panel = pygame.Surface(
+            (title.get_width() + 34, title.get_height() + 14),
+            pygame.SRCALPHA,
+        )
+        pygame.draw.rect(
+            title_panel,
+            (3, 10, 24, 185),
+            title_panel.get_rect(),
+            0,
+            12,
+        )
+        surface.blit(title_panel, title_panel.get_rect(center=center))
+        surface.blit(
+            title_shadow,
+            title_shadow.get_rect(center=(center[0] + 2, center[1] + 3)),
+        )
+        surface.blit(title, title.get_rect(center=center))
+
+        # keep playback controls in one small floating strip
+        panel_width = min(600, width - 320)
+        control_panel = pygame.Rect(
+            (width - panel_width) // 2,
+            height - 66,
+            panel_width,
+            52,
+        )
+        panel_surface = pygame.Surface(control_panel.size, pygame.SRCALPHA)
+        pygame.draw.rect(
+            panel_surface,
+            (3, 10, 24, 205),
+            panel_surface.get_rect(),
+            0,
+            10,
+        )
+        surface.blit(panel_surface, control_panel)
+
+        self.play_rect = pygame.Rect(
+            control_panel.left + 10,
+            control_panel.top + 8,
+            82,
+            36,
+        )
+        self.timeline_rect = pygame.Rect(
+            self.play_rect.right + 68,
+            control_panel.centery - 4,
+            control_panel.right - self.play_rect.right - 136,
+            8,
+        )
+        self.timeline_hit_rect = self.timeline_rect.inflate(0, 26)
+        progress = 0.0 if duration <= 0 else current_time / duration
+        progress = min(1.0, max(0.0, progress))
+        pygame.draw.rect(
+            surface,
+            (68, 81, 101),
+            self.timeline_rect,
+            0,
+            5,
+        )
+        filled_rect = self.timeline_rect.copy()
+        filled_rect.width = round(self.timeline_rect.width * progress)
+        if filled_rect.width > 0:
+            pygame.draw.rect(
+                surface,
+                (104, 214, 255),
+                filled_rect,
+                0,
+                5,
+            )
+        handle = pygame.Rect(0, 0, 12, 22)
+        handle.center = (
+            self.timeline_rect.left + filled_rect.width,
+            self.timeline_rect.centery,
+        )
+        pygame.draw.rect(surface, (255, 255, 255), handle, 0, 5)
+        pygame.draw.rect(surface, (8, 24, 48), handle, 2, 5)
+
+        elapsed_text = self.time_font.render(
+            self.format_time(current_time),
+            True,
+            (255, 255, 255),
+        )
+        duration_text = self.time_font.render(
+            self.format_time(duration),
+            True,
+            (255, 255, 255),
+        )
+        surface.blit(
+            elapsed_text,
+            elapsed_text.get_rect(
+                midright=(self.timeline_rect.left - 10, self.timeline_rect.centery)
+            ),
+        )
+        surface.blit(
+            duration_text,
+            duration_text.get_rect(
+                midleft=(self.timeline_rect.right + 10, self.timeline_rect.centery)
+            ),
+        )
+
+        # navigation stays tucked into the two lower corners
+        self.back_rect = pygame.Rect(14, height - 52, 108, 38)
+        self.play_again_rect = pygame.Rect(width - 158, height - 52, 144, 38)
+        self.draw_button(surface, self.back_rect, "BACK")
+        self.draw_button(
+            surface,
+            self.play_rect,
+            "PAUSE" if playing else "PLAY",
+            active=playing,
+        )
+        self.draw_button(surface, self.play_again_rect, "PLAY AGAIN")
+
+    # return a named button action for the finished-match screen
+    def get_action(self, position):
+        if self.back_rect.collidepoint(position):
+            return "back"
+        if self.play_rect.collidepoint(position):
+            return "toggle"
+        if self.play_again_rect.collidepoint(position):
+            return "play_again"
+        if self.timeline_hit_rect.collidepoint(position):
+            return "timeline"
+        return None
+
+    # turn a pointer position into a clamped replay percentage
+    def get_timeline_fraction(self, position):
+        if self.timeline_rect.width <= 0:
+            return 0.0
+        return min(
+            1.0,
+            max(
+                0.0,
+                (position[0] - self.timeline_rect.left)
+                / self.timeline_rect.width,
+            ),
+        )
